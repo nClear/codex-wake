@@ -1,0 +1,11 @@
+.DS_Store
+
+.build/
+dist/
+
+*.backup
+*.bak
+*.tmp
+
+*.xcuserdata/
+DerivedData/
