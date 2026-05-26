@@ -20,7 +20,7 @@ The release build is signed with a Developer ID certificate and notarized by App
 
 To install it:
 
-1. Download `Codex-Wake-0.1.0-macOS.zip`.
+1. Download `Codex-Wake-0.1.1-macOS.zip`.
 2. Unzip the archive.
 3. Move `Codex Wake.app` to `/Applications`.
 4. Open it.

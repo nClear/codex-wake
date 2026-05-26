@@ -7,5 +7,7 @@ dist/
 *.bak
 *.tmp
 
+.local/
+
 *.xcuserdata/
 DerivedData/
