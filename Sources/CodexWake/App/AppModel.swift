@@ -19,6 +19,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var filteredThreads: [CodexThread] = []
     @Published var preview: ThreadPreview?
     @Published var wakeReport: WakeReport?
+    @Published var moveReport: MoveReport?
     @Published private(set) var isDemoMode: Bool
 
     private let store: any ThreadStore
@@ -26,6 +27,13 @@ final class AppModel: ObservableObject {
 
     var selectedThread: CodexThread? {
         threads.first { $0.id == selectedThreadID }
+    }
+
+    var moveTargetProjects: [ProjectSummary] {
+        guard let thread = selectedThread else { return [] }
+        return projects.filter { project in
+            project.id != ProjectSummary.allID && project.path != thread.cwd
+        }
     }
 
     init(demoMode: Bool = AppModel.detectDemoMode(), store: (any ThreadStore)? = nil) {
@@ -87,13 +95,14 @@ final class AppModel: ObservableObject {
                 backups: ["Demo mode does not change local Codex files."],
                 changedFiles: []
             )
-            status = "Demo mode: wake disabled"
+            status = "Demo wake complete"
             return
         }
         isLoading = true
         status = "Waking chat..."
         errorMessage = nil
         wakeReport = nil
+        moveReport = nil
         defer { isLoading = false }
 
         do {
@@ -106,6 +115,33 @@ final class AppModel: ObservableObject {
         } catch {
             errorMessage = readable(error)
             status = "Wake failed"
+        }
+    }
+
+    func moveSelectedThread(to project: ProjectSummary) async {
+        guard let thread = selectedThread else { return }
+        isLoading = true
+        status = "Moving chat..."
+        errorMessage = nil
+        wakeReport = nil
+        moveReport = nil
+        defer { isLoading = false }
+
+        do {
+            let report = try await Task.detached(priority: .userInitiated) {
+                try self.store.move(thread: thread, to: project)
+            }.value
+            moveReport = report
+            status = "Moved to \(project.name)"
+            let movedThreadID = thread.id
+            await refresh()
+            selectedProjectID = project.id
+            selectedThreadID = movedThreadID
+            applyFilters()
+            await loadPreview(threadID: movedThreadID)
+        } catch {
+            errorMessage = readable(error)
+            status = "Move failed"
         }
     }
 

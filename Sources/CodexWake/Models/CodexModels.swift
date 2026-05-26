@@ -127,6 +127,16 @@ struct WakeReport: Identifiable {
     let changedFiles: [String]
 }
 
+struct MoveReport: Identifiable {
+    let id = UUID()
+    let threadID: String
+    let fromProject: String
+    let toProject: String
+    let timestamp: String
+    let backups: [String]
+    let changedFiles: [String]
+}
+
 extension String {
     var oneLine: String {
         replacingOccurrences(of: "\n", with: " ")

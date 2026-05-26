@@ -109,6 +109,37 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
         return WakeReport(threadID: thread.id, timestamp: stamp, backups: backups, changedFiles: changed)
     }
 
+    func move(thread: CodexThread, to project: ProjectSummary) throws -> MoveReport {
+        guard !project.path.isEmpty else {
+            throw WakeError.commandFailed("Cannot move to All Projects")
+        }
+        guard fileManager.fileExists(atPath: thread.rolloutPath) else {
+            throw WakeError.missingThreadFile(thread.rolloutPath)
+        }
+
+        let stamp = backupStamp()
+        var backups: [String] = []
+        var changed: [String] = []
+
+        backups += try backupStateFiles(stamp: stamp)
+        backups.append(try backup(thread.rolloutURL, suffix: stamp).path)
+
+        try updateSQLiteProject(threadID: thread.id, cwd: project.path)
+        changed.append(stateDB.path)
+
+        try updateSessionMetaProject(path: thread.rolloutURL, cwd: project.path)
+        changed.append(thread.rolloutPath)
+
+        return MoveReport(
+            threadID: thread.id,
+            fromProject: thread.cwd,
+            toProject: project.path,
+            timestamp: stamp,
+            backups: backups,
+            changedFiles: changed
+        )
+    }
+
     private func loadThreadRows() throws -> [ThreadRow] {
         let query = """
         select id, rollout_path, created_at, updated_at, source, coalesce(thread_source, '') as thread_source,
@@ -282,6 +313,17 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
         _ = try Shell.run("/usr/bin/sqlite3", [stateDB.path, sql])
     }
 
+    private func updateSQLiteProject(threadID: String, cwd: String) throws {
+        let escapedThreadID = threadID.replacingOccurrences(of: "'", with: "''")
+        let escapedCWD = cwd.replacingOccurrences(of: "'", with: "''")
+        let sql = """
+        update threads
+        set cwd = '\(escapedCWD)'
+        where id = '\(escapedThreadID)';
+        """
+        _ = try Shell.run("/usr/bin/sqlite3", [stateDB.path, sql])
+    }
+
     private func updateSessionIndex(threadID: String, updatedAt: String) throws {
         guard fileManager.fileExists(atPath: sessionIndex.path) else { return }
         let text = try String(contentsOf: sessionIndex, encoding: .utf8)
@@ -316,6 +358,24 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
         obj["timestamp"] = timestamp
         var payload = obj["payload"] as? [String: Any] ?? [:]
         payload["timestamp"] = timestamp
+        obj["payload"] = payload
+
+        let encoded = try JSONSerialization.data(withJSONObject: obj, options: [])
+        let firstLine = String(data: encoded, encoding: .utf8) ?? String(first)
+        let rest = parts.count > 1 ? String(parts[1]) : ""
+        try (firstLine + "\n" + rest).write(to: path, atomically: true, encoding: .utf8)
+    }
+
+    private func updateSessionMetaProject(path: URL, cwd: String) throws {
+        let text = try String(contentsOf: path, encoding: .utf8)
+        let parts = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let first = parts.first,
+              let data = String(first).data(using: .utf8),
+              var obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { throw WakeError.invalidJSON("Cannot decode first JSONL line") }
+
+        var payload = obj["payload"] as? [String: Any] ?? [:]
+        payload["cwd"] = cwd
         obj["payload"] = payload
 
         let encoded = try JSONSerialization.data(withJSONObject: obj, options: [])

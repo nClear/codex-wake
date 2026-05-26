@@ -2,9 +2,15 @@
 
 Codex Desktop currently hides chats older than about one week from the sidebar, even when the app setting says not to delete chats. The conversations are usually still on disk, but they become hard to find and continue.
 
-Codex Wake is an unofficial local macOS app for browsing, searching, and waking those hidden Codex chats. It reads the local Codex data directory, shows chats grouped by project, supports metadata search and optional deep search through JSONL transcripts, and can "wake" a selected chat so it appears again in the Codex sidebar.
+Another common pain: useful chats can end up attached to the wrong project, which makes them hard to find in the right workspace later.
+
+Codex Wake is an unofficial local macOS app for browsing, searching, waking, and moving Codex chats. It reads the local Codex data directory, shows chats grouped by project, supports metadata search and optional deep search through JSONL transcripts, can "wake" a selected chat so it appears again in the Codex sidebar, and can move a chat from one known project to another.
 
 ![Codex Wake screenshot](assets/screenshot.png)
+
+## Update
+
+Codex Wake can now move chats between projects. Select a chat, click **Move**, choose the target project, and the app updates the local project metadata with backups first.
 
 ## Download
 
@@ -40,6 +46,7 @@ CODEX_WAKE_DEMO=1 "dist/Codex Wake.app/Contents/MacOS/CodexWake"
 - Run optional deep search inside chat JSONL files.
 - Preview messages from a selected thread without opening Codex.
 - Wake a thread by updating the local metadata Codex uses for recent/sidebar visibility.
+- Move a thread between known projects by updating its local project metadata.
 - Create backups before every wake operation.
 - Reveal a thread JSONL file in Finder or copy its path.
 
@@ -68,6 +75,15 @@ The chat messages themselves are not modified.
 
 Backups are written next to the original files with a timestamp suffix.
 
+## Move Operation
+
+When you move a selected thread, Codex Wake creates timestamped backups and updates the project path metadata Codex uses for grouping:
+
+- `threads.cwd`
+- the first `session_meta` line in the thread JSONL file: `payload.cwd`
+
+After the move, Codex Wake reloads the full thread list so project counts and filters reflect the new location.
+
 ## Build
 
 Requirements:
@@ -95,7 +111,7 @@ dist/Codex Wake.app
 
 ## Safety Notes
 
-Codex Wake edits local Codex metadata when you press **Wake**. Keep Codex Desktop closed while waking old threads if you want to avoid concurrent writes.
+Codex Wake edits local Codex metadata when you press **Wake** or **Move**. Keep Codex Desktop closed while changing old threads if you want to avoid concurrent writes.
 
 If something looks wrong after a wake operation, restore the backup files shown in the wake report.
 

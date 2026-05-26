@@ -2,6 +2,8 @@ import Foundation
 
 final class DemoCodexStore: ThreadStore, @unchecked Sendable {
     private let baseDate = Date(timeIntervalSince1970: 1_779_750_000)
+    private let lock = NSLock()
+    private var movedProjects: [String: String] = [:]
 
     func loadThreads() throws -> [CodexThread] {
         let projects = [
@@ -23,11 +25,14 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
             ("Render social preview image", "Create a repository preview image that shows the product clearly without leaking real data.", projects[3].0, 18 * 24, true)
         ]
 
+        let overrides = movedProjectSnapshot()
         return rows.enumerated().map { index, row in
+            let id = "demo-thread-\(String(format: "%03d", index + 1))"
+            let cwd = overrides[id] ?? row.2
             let updatedAt = baseDate.addingTimeInterval(-Double(row.3) * 60 * 60)
             let createdAt = updatedAt.addingTimeInterval(-Double(2 + index) * 60 * 60)
             return CodexThread(
-                id: "demo-thread-\(String(format: "%03d", index + 1))",
+                id: id,
                 rolloutPath: "/demo/codex-wake/sample-thread-\(index + 1).jsonl",
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -40,7 +45,7 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
                 title: row.0,
                 firstUserMessage: row.1,
                 preview: samplePreview(title: row.0),
-                cwd: row.2,
+                cwd: cwd,
                 sessionIndexUpdatedAt: row.4 ? nil : updatedAt,
                 sessionMetaTimestamp: updatedAt,
                 sessionPayloadTimestamp: updatedAt,
@@ -69,7 +74,7 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
             ),
             PreviewMessage(
                 role: "assistant",
-                text: "Done. The demo data is intentionally synthetic, search works across titles and preview text, and wake actions are disabled in demo mode.",
+                text: "Done. The demo data is intentionally synthetic, search works across titles and preview text, and write actions only update this temporary demo session.",
                 timestamp: WakeDates.isoDemo(thread.updatedAt)
             )
         ]
@@ -93,8 +98,29 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
         )
     }
 
+    func move(thread: CodexThread, to project: ProjectSummary) throws -> MoveReport {
+        lock.lock()
+        movedProjects[thread.id] = project.path
+        lock.unlock()
+
+        return MoveReport(
+            threadID: thread.id,
+            fromProject: thread.cwd,
+            toProject: project.path,
+            timestamp: "demo",
+            backups: ["Demo mode does not read or write local Codex files."],
+            changedFiles: []
+        )
+    }
+
     private func samplePreview(title: String) -> String {
         "Preview for \(title): synthetic chat content for public screenshots, documentation, and safe UI testing."
+    }
+
+    private func movedProjectSnapshot() -> [String: String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return movedProjects
     }
 }
 

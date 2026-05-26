@@ -5,4 +5,5 @@ protocol ThreadStore: Sendable {
     func loadPreview(for thread: CodexThread) throws -> ThreadPreview
     func threadContainsRawText(_ thread: CodexThread, query: String) throws -> Bool
     func wake(thread: CodexThread) throws -> WakeReport
+    func move(thread: CodexThread, to project: ProjectSummary) throws -> MoveReport
 }

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ThreadDetailView: View {
     @EnvironmentObject private var model: AppModel
+    @State private var isMoveSheetPresented = false
 
     var body: some View {
         Group {
@@ -12,6 +13,7 @@ struct ThreadDetailView: View {
                         metadata(thread)
                         actions(thread)
                         wakeReport
+                        moveReport
                         preview
                     }
                     .padding(22)
@@ -72,6 +74,19 @@ struct ThreadDetailView: View {
             .help(model.isDemoMode ? "Show a demo wake report without changing local files" : "Back up metadata, update dates, and make the chat recent in Codex App")
 
             Button {
+                isMoveSheetPresented = true
+            } label: {
+                Label("Move", systemImage: "arrow.right.folder")
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.isLoading || model.moveTargetProjects.isEmpty || thread.archived || !thread.fileExists)
+            .help("Move this chat to another known project")
+            .sheet(isPresented: $isMoveSheetPresented) {
+                MoveThreadSheet(isPresented: $isMoveSheetPresented)
+                    .environmentObject(model)
+            }
+
+            Button {
                 model.revealSelectedInFinder()
             } label: {
                 Label("Reveal", systemImage: "folder")
@@ -108,6 +123,29 @@ struct ThreadDetailView: View {
     }
 
     @ViewBuilder
+    private var moveReport: some View {
+        if let report = model.moveReport {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Move complete")
+                    .font(.headline)
+                row("From", report.fromProject)
+                row("To", report.toProject)
+                if !report.backups.isEmpty {
+                    Text("Backups")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    ForEach(report.backups, id: \.self) { path in
+                        Text(path).font(.caption.monospaced()).textSelection(.enabled)
+                    }
+                }
+            }
+            .font(.system(size: 12))
+            .padding(12)
+            .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    @ViewBuilder
     private var preview: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Preview")
@@ -124,6 +162,74 @@ struct ThreadDetailView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+private struct MoveThreadSheet: View {
+    @EnvironmentObject private var model: AppModel
+    @Binding var isPresented: Bool
+    @State private var selectedProjectID: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Move Chat")
+                    .font(.title3.weight(.semibold))
+                if let thread = model.selectedThread {
+                    Text(thread.shortTitle)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+
+            List(model.moveTargetProjects, selection: $selectedProjectID) { project in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(project.name)
+                            .font(.system(size: 13, weight: .medium))
+                        Spacer()
+                        Text("\(project.totalCount)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(project.path)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .padding(.vertical, 4)
+                .tag(project.id as String?)
+            }
+            .frame(minHeight: 220)
+
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    isPresented = false
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button("Move") {
+                    guard let selectedProject else { return }
+                    isPresented = false
+                    Task { await model.moveSelectedThread(to: selectedProject) }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(selectedProject == nil)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 460, height: 380)
+        .onAppear {
+            selectedProjectID = model.moveTargetProjects.first?.id
+        }
+    }
+
+    private var selectedProject: ProjectSummary? {
+        guard let selectedProjectID else { return nil }
+        return model.moveTargetProjects.first { $0.id == selectedProjectID }
     }
 }
 
