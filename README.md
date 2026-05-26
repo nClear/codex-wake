@@ -1,8 +1,28 @@
 # Codex Wake
 
-Local macOS utility for browsing, searching, and waking Codex Desktop chat threads.
+Codex Desktop currently hides chats older than about one week from the sidebar, even when the app setting says not to delete chats. The conversations are usually still on disk, but they become hard to find and continue.
 
-Codex Wake is an unofficial tool for people who keep important work in Codex chats and need a fast way to find older local threads. It reads the local Codex data directory, shows chats grouped by project, supports metadata search and optional deep search through JSONL transcripts, and can "wake" a selected chat so it appears again in the Codex sidebar.
+Codex Wake is an unofficial local macOS app for browsing, searching, and waking those hidden Codex chats. It reads the local Codex data directory, shows chats grouped by project, supports metadata search and optional deep search through JSONL transcripts, and can "wake" a selected chat so it appears again in the Codex sidebar.
+
+## Download
+
+Download the latest unsigned macOS build from [Releases](https://github.com/nClear/codex-wake/releases).
+
+The first release is distributed as an unsigned `.app` inside a zip archive. Because it is not signed or notarized by Apple yet, macOS may block it on first launch.
+
+To open it:
+
+1. Unzip `Codex-Wake-0.1.0-macOS-unsigned.zip`.
+2. Move `Codex Wake.app` to `/Applications`.
+3. Right-click the app and choose **Open**.
+
+If macOS still blocks the app, remove the quarantine flag:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Codex Wake.app"
+```
+
+Signed and notarized builds may be added later.
 
 ## Features
 
