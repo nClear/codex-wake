@@ -6,23 +6,16 @@ Codex Wake is an unofficial local macOS app for browsing, searching, and waking 
 
 ## Download
 
-Download the latest unsigned macOS build from [Releases](https://github.com/nClear/codex-wake/releases).
+Download the latest macOS build from [Releases](https://github.com/nClear/codex-wake/releases).
 
-The first release is distributed as an unsigned `.app` inside a zip archive. Because it is not signed or notarized by Apple yet, macOS may block it on first launch.
+The release build is signed with a Developer ID certificate and notarized by Apple.
 
-To open it:
+To install it:
 
-1. Unzip `Codex-Wake-0.1.0-macOS-unsigned.zip`.
+1. Download `Codex-Wake-0.1.0-macOS.zip`.
+2. Unzip the archive.
 2. Move `Codex Wake.app` to `/Applications`.
-3. Right-click the app and choose **Open**.
-
-If macOS still blocks the app, remove the quarantine flag:
-
-```sh
-xattr -dr com.apple.quarantine "/Applications/Codex Wake.app"
-```
-
-Signed and notarized builds may be added later.
+3. Open it.
 
 ## Features
 
