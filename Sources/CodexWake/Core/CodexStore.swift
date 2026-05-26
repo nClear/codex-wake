@@ -1,7 +1,7 @@
 import Foundation
 import SQLite3
 
-final class CodexStore: @unchecked Sendable {
+final class CodexStore: ThreadStore, @unchecked Sendable {
     private let fileManager = FileManager.default
     private let codexHome: URL
     private let stateDB: URL

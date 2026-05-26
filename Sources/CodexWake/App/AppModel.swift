@@ -19,21 +19,24 @@ final class AppModel: ObservableObject {
     @Published private(set) var filteredThreads: [CodexThread] = []
     @Published var preview: ThreadPreview?
     @Published var wakeReport: WakeReport?
+    @Published private(set) var isDemoMode: Bool
 
-    private let store = CodexStore()
+    private let store: any ThreadStore
     private var deepSearchTask: Task<Void, Never>?
 
     var selectedThread: CodexThread? {
         threads.first { $0.id == selectedThreadID }
     }
 
-    init() {
+    init(demoMode: Bool = AppModel.detectDemoMode(), store: (any ThreadStore)? = nil) {
+        self.isDemoMode = demoMode
+        self.store = store ?? (demoMode ? DemoCodexStore() : CodexStore())
         Task { await refresh() }
     }
 
     func refresh() async {
         isLoading = true
-        status = "Scanning ~/.codex..."
+        status = isDemoMode ? "Loading demo chats..." : "Scanning ~/.codex..."
         errorMessage = nil
         defer { isLoading = false }
 
@@ -49,7 +52,7 @@ final class AppModel: ObservableObject {
             }
             applyFilters()
             preview = nil
-            status = "Loaded \(loaded.count) chats"
+            status = isDemoMode ? "Loaded \(loaded.count) demo chats" : "Loaded \(loaded.count) chats"
         } catch {
             errorMessage = readable(error)
             status = "Error"
@@ -77,6 +80,16 @@ final class AppModel: ObservableObject {
 
     func wakeSelectedThread() async {
         guard let thread = selectedThread else { return }
+        guard !isDemoMode else {
+            wakeReport = WakeReport(
+                threadID: thread.id,
+                timestamp: "demo",
+                backups: ["Demo mode does not change local Codex files."],
+                changedFiles: []
+            )
+            status = "Demo mode: wake disabled"
+            return
+        }
         isLoading = true
         status = "Waking chat..."
         errorMessage = nil
@@ -97,11 +110,19 @@ final class AppModel: ObservableObject {
     }
 
     func revealSelectedInFinder() {
+        guard !isDemoMode else {
+            status = "Demo mode has no local file"
+            return
+        }
         guard let url = selectedThread?.rolloutURL else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     func copySelectedPath() {
+        guard !isDemoMode else {
+            status = "Demo mode has no local path"
+            return
+        }
         guard let path = selectedThread?.rolloutPath else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(path, forType: .string)
@@ -168,12 +189,20 @@ final class AppModel: ObservableObject {
 
         guard !query.isEmpty else {
             filteredThreads = source
+            selectFirstFilteredThreadIfNeeded()
             return
         }
 
         filteredThreads = source.filter { thread in
             thread.matchesMetadata(query)
         }
+        selectFirstFilteredThreadIfNeeded()
+    }
+
+    private func selectFirstFilteredThreadIfNeeded() {
+        guard !filteredThreads.contains(where: { $0.id == selectedThreadID }) else { return }
+        selectedThreadID = filteredThreads.first?.id
+        preview = nil
     }
 
     private func readable(_ error: Error) -> String {
@@ -182,5 +211,11 @@ final class AppModel: ObservableObject {
             return description
         }
         return error.localizedDescription
+    }
+
+    private nonisolated static func detectDemoMode() -> Bool {
+        let args = ProcessInfo.processInfo.arguments
+        let env = ProcessInfo.processInfo.environment
+        return args.contains("--demo") || env["CODEX_WAKE_DEMO"] == "1"
     }
 }

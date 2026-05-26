@@ -69,7 +69,7 @@ struct ThreadDetailView: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(model.isLoading || thread.archived || !thread.fileExists)
-            .help("Back up metadata, update dates, and make the chat recent in Codex App")
+            .help(model.isDemoMode ? "Show a demo wake report without changing local files" : "Back up metadata, update dates, and make the chat recent in Codex App")
 
             Button {
                 model.revealSelectedInFinder()
@@ -77,6 +77,7 @@ struct ThreadDetailView: View {
                 Label("Reveal", systemImage: "folder")
             }
             .buttonStyle(.bordered)
+            .disabled(model.isDemoMode)
 
             Button {
                 model.copySelectedPath()
@@ -84,6 +85,7 @@ struct ThreadDetailView: View {
                 Label("Copy Path", systemImage: "doc.on.doc")
             }
             .buttonStyle(.bordered)
+            .disabled(model.isDemoMode)
         }
     }
 
