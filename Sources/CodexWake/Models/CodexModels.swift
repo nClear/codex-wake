@@ -12,9 +12,11 @@ struct CodexThread: Identifiable, Hashable {
     let hasUserEvent: Bool
     let archived: Bool
     let title: String
+    let sessionIndexTitle: String
     let firstUserMessage: String
     let preview: String
     let cwd: String
+    let isInSessionIndex: Bool
     let sessionIndexUpdatedAt: Date?
     let sessionMetaTimestamp: Date?
     let sessionPayloadTimestamp: Date?
@@ -22,9 +24,11 @@ struct CodexThread: Identifiable, Hashable {
 
     var rolloutURL: URL { URL(fileURLWithPath: rolloutPath) }
     var shortTitle: String {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return firstUserMessage.oneLine.prefixString(80) }
-        return trimmed.oneLine.prefixString(80)
+        for candidate in [sessionIndexTitle, title, firstUserMessage] {
+            let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed.oneLine.prefixString(80) }
+        }
+        return id
     }
 
     var projectName: String {
@@ -34,13 +38,12 @@ struct CodexThread: Identifiable, Hashable {
     var needsWake: Bool {
         if archived { return false }
         if !fileExists { return false }
-        if threadSource != "user" { return true }
-        if sessionIndexUpdatedAt == nil { return true }
+        if !isInSessionIndex { return true }
         return !isRecentlyUpdated
     }
 
     var isShown: Bool {
-        !archived && fileExists && threadSource == "user" && !needsWake
+        !archived && fileExists && isInSessionIndex && isRecentlyUpdated
     }
 
     var isRecentlyUpdated: Bool {
@@ -50,7 +53,7 @@ struct CodexThread: Identifiable, Hashable {
     var statusLabel: String {
         if archived { return "Archived" }
         if !fileExists { return "Missing file" }
-        if threadSource != "user" { return "Hidden" }
+        if !isInSessionIndex { return "Hidden" }
         if needsWake { return "Old" }
         return "Shown"
     }
@@ -58,6 +61,7 @@ struct CodexThread: Identifiable, Hashable {
     func matchesMetadata(_ query: String) -> Bool {
         let q = query.lowercased()
         return id.lowercased().contains(q)
+            || sessionIndexTitle.lowercased().contains(q)
             || title.lowercased().contains(q)
             || firstUserMessage.lowercased().contains(q)
             || preview.lowercased().contains(q)
