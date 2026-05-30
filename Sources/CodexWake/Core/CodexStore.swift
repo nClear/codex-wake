@@ -6,6 +6,7 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
     private let codexHome: URL
     private let stateDB: URL
     private let sessionIndex: URL
+    private let backupMarker = ".codex-rescue-backup-"
 
     init(codexHome: URL? = nil) {
         let home = codexHome ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
@@ -141,6 +142,58 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
             backups: backups,
             changedFiles: changed
         )
+    }
+
+    func loadBackups() throws -> [BackupFile] {
+        guard fileManager.fileExists(atPath: codexHome.path) else { throw WakeError.missingCodexHome(codexHome) }
+
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
+        guard let enumerator = fileManager.enumerator(
+            at: codexHome,
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else { return [] }
+
+        var backups: [BackupFile] = []
+        for case let url as URL in enumerator {
+            guard url.lastPathComponent.contains(backupMarker) else { continue }
+            let values = try url.resourceValues(forKeys: keys)
+            guard values.isRegularFile == true else { continue }
+
+            let parts = url.lastPathComponent.components(separatedBy: backupMarker)
+            guard parts.count >= 2 else { continue }
+
+            backups.append(
+                BackupFile(
+                    path: url.path,
+                    originalName: parts[0],
+                    directory: url.deletingLastPathComponent().path,
+                    stamp: parts.dropFirst().joined(separator: backupMarker),
+                    size: Int64(values.fileSize ?? 0),
+                    modifiedAt: values.contentModificationDate ?? .distantPast
+                )
+            )
+        }
+
+        return backups.sorted { lhs, rhs in
+            if lhs.modifiedAt != rhs.modifiedAt { return lhs.modifiedAt > rhs.modifiedAt }
+            return lhs.path.localizedCaseInsensitiveCompare(rhs.path) == .orderedAscending
+        }
+    }
+
+    func deleteBackups(paths: Set<String>) throws -> Int {
+        guard !paths.isEmpty else { return 0 }
+        let codexHomePath = codexHome.standardizedFileURL.path
+        var deleted = 0
+        for path in paths {
+            guard path.contains(backupMarker) else { continue }
+            let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+            guard standardizedPath == codexHomePath || standardizedPath.hasPrefix(codexHomePath + "/") else { continue }
+            guard fileManager.fileExists(atPath: path) else { continue }
+            try fileManager.removeItem(atPath: path)
+            deleted += 1
+        }
+        return deleted
     }
 
     private func loadThreadRows() throws -> [ThreadRow] {
@@ -299,7 +352,7 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
     }
 
     private func backup(_ url: URL, suffix: String) throws -> URL {
-        let destination = url.deletingLastPathComponent().appendingPathComponent(url.lastPathComponent + ".codex-rescue-backup-" + suffix)
+        let destination = url.deletingLastPathComponent().appendingPathComponent(url.lastPathComponent + backupMarker + suffix)
         if fileManager.fileExists(atPath: destination.path) {
             try fileManager.removeItem(at: destination)
         }

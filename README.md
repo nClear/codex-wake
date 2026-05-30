@@ -4,7 +4,7 @@ Codex Desktop currently hides chats older than about one week from the sidebar, 
 
 Another common pain: useful chats can end up attached to the wrong project, which makes them hard to find in the right workspace later.
 
-Codex Wake is an unofficial local macOS app for browsing, searching, waking, and moving Codex chats. It reads the local Codex data directory, shows chats grouped by project, supports metadata search and optional deep search through JSONL transcripts, can "wake" a selected chat so it appears again in the Codex sidebar, and can move a chat from one known project to another.
+Codex Wake is an unofficial local macOS app for browsing, searching, waking, moving, and cleaning up Codex chats. It reads the local Codex data directory, shows chats grouped by project, supports metadata search and optional deep search through JSONL transcripts, can "wake" selected chats so they appear again in the Codex sidebar, can move chats from one known project to another, and can manage the backup files it creates.
 
 ![Codex Wake screenshot](assets/screenshot.png)
 
@@ -45,9 +45,12 @@ CODEX_WAKE_DEMO=1 "dist/Codex Wake.app/Contents/MacOS/CodexWake"
 - Search by title, first message, preview text, path, or thread id.
 - Run optional deep search inside chat JSONL files.
 - Preview messages from a selected thread without opening Codex.
-- Wake a thread by updating the local metadata Codex uses for recent/sidebar visibility.
-- Move a thread between known projects by updating its local project metadata.
+- Select multiple threads, then wake, move, reveal, or copy paths in one batch.
+- Right-click a thread or selected thread group for quick actions.
+- Wake threads by updating the local metadata Codex uses for recent/sidebar visibility.
+- Move threads between known projects by updating local project metadata.
 - Create backups before every wake operation.
+- Review and delete Codex Wake backup files from the backup manager.
 - Reveal a thread JSONL file in Finder or copy its path.
 
 ## What It Reads
@@ -74,6 +77,8 @@ When you wake a selected thread, Codex Wake creates timestamped backups and then
 The chat messages themselves are not modified.
 
 Backups are written next to the original files with a timestamp suffix.
+
+Use the backup manager in the sidebar toolbar to review and delete backup files created by Codex Wake.
 
 ## Move Operation
 

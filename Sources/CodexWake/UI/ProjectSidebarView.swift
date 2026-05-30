@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ProjectSidebarView: View {
     @EnvironmentObject private var model: AppModel
+    @State private var isBackupManagerPresented = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -9,6 +10,14 @@ struct ProjectSidebarView: View {
                 Text("Codex Wake")
                     .font(.headline)
                 Spacer()
+                Button {
+                    isBackupManagerPresented = true
+                } label: {
+                    Image(systemName: "archivebox")
+                }
+                .buttonStyle(.borderless)
+                .help("Manage backups")
+
                 Button {
                     Task { await model.refresh() }
                 } label: {
@@ -31,6 +40,10 @@ struct ProjectSidebarView: View {
             .listStyle(.sidebar)
         }
         .background(Color(white: 0.94))
+        .sheet(isPresented: $isBackupManagerPresented) {
+            BackupManagerView()
+                .environmentObject(model)
+        }
     }
 }
 

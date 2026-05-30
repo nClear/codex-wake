@@ -4,6 +4,7 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
     private let baseDate = Date(timeIntervalSince1970: 1_779_750_000)
     private let lock = NSLock()
     private var movedProjects: [String: String] = [:]
+    private var deletedBackupPaths: Set<String> = []
 
     func loadThreads() throws -> [CodexThread] {
         let projects = [
@@ -115,6 +116,37 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
         )
     }
 
+    func loadBackups() throws -> [BackupFile] {
+        let rows = [
+            ("state_5.sqlite.codex-rescue-backup-20260528-092500", "/Users/demo/.codex", 4_194_304, 34),
+            ("session_index.jsonl.codex-rescue-backup-20260528-092500", "/Users/demo/.codex", 91_200, 34),
+            ("thread-001.jsonl.codex-rescue-backup-20260527-184012", "/Users/demo/.codex/sessions/2026/05/27", 604_000, 49),
+            ("thread-004.jsonl.codex-rescue-backup-20260525-101604", "/Users/demo/.codex/sessions/2026/05/25", 1_432_100, 104)
+        ]
+        let deleted = deletedBackupSnapshot()
+        return rows.compactMap { name, directory, size, hoursAgo in
+            let path = directory + "/" + name
+            guard !deleted.contains(path) else { return nil }
+            let parts = name.components(separatedBy: ".codex-rescue-backup-")
+            return BackupFile(
+                path: path,
+                originalName: parts.first ?? name,
+                directory: directory,
+                stamp: parts.dropFirst().joined(separator: ".codex-rescue-backup-"),
+                size: Int64(size),
+                modifiedAt: baseDate.addingTimeInterval(-Double(hoursAgo) * 60 * 60)
+            )
+        }
+        .sorted { $0.modifiedAt > $1.modifiedAt }
+    }
+
+    func deleteBackups(paths: Set<String>) throws -> Int {
+        lock.lock()
+        deletedBackupPaths.formUnion(paths)
+        lock.unlock()
+        return paths.count
+    }
+
     private func samplePreview(title: String) -> String {
         "Preview for \(title): synthetic chat content for public screenshots, documentation, and safe UI testing."
     }
@@ -123,6 +155,12 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return movedProjects
+    }
+
+    private func deletedBackupSnapshot() -> Set<String> {
+        lock.lock()
+        defer { lock.unlock() }
+        return deletedBackupPaths
     }
 }
 

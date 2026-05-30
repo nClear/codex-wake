@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ThreadListView: View {
     @EnvironmentObject private var model: AppModel
+    @State private var isMoveSheetPresented = false
+    @State private var rangeAnchorID: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -55,35 +57,189 @@ struct ThreadListView: View {
 
                     Spacer()
                 }
+
+                if model.selectedThreadCount > 1 {
+                    selectionToolbar
+                }
             }
             .padding(12)
 
             Divider()
 
-            List(selection: $model.selectedThreadID) {
+            List {
                 ForEach(model.filteredThreads) { thread in
-                    ThreadRow(thread: thread)
-                        .tag(thread.id)
-                        .onTapGesture { model.selectThread(thread) }
+                    ThreadRow(thread: thread, isSelected: model.selectedThreadIDs.contains(thread.id))
+                        .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
+                        .listRowSeparator(.hidden)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            select(thread)
+                        }
+                        .contextMenu {
+                            ThreadContextMenu(
+                                thread: thread,
+                                targetIDs: contextTargetIDs(for: thread),
+                                isMoveSheetPresented: $isMoveSheetPresented
+                            )
+                            .environmentObject(model)
+                        }
                 }
             }
             .listStyle(.plain)
         }
-        .onChange(of: model.selectedThreadID) { _, newValue in
-            guard let id = newValue, let thread = model.filteredThreads.first(where: { $0.id == id }) else { return }
-            model.selectThread(thread)
+        .sheet(isPresented: $isMoveSheetPresented) {
+            MoveThreadSheet(isPresented: $isMoveSheetPresented)
+                .environmentObject(model)
         }
+    }
+
+    private var selectionToolbar: some View {
+        HStack(spacing: 8) {
+            Text("\(model.selectedThreadCount) selected")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 70, alignment: .leading)
+
+            Button {
+                Task { await model.wakeSelectedThreads() }
+            } label: {
+                Label("Wake", systemImage: "alarm")
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.isLoading || !model.canOperateOnSelectedThreads)
+
+            Button {
+                isMoveSheetPresented = true
+            } label: {
+                Label("Move", systemImage: "arrow.right.folder")
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.isLoading || model.moveTargetProjects.isEmpty)
+
+            Button {
+                model.revealSelectedInFinder()
+            } label: {
+                Image(systemName: "folder")
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.isDemoMode)
+            .help("Reveal selected chats in Finder")
+
+            Button {
+                model.copySelectedPath()
+            } label: {
+                Image(systemName: "doc.on.doc")
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.isDemoMode)
+            .help("Copy selected chat paths")
+
+            Spacer()
+        }
+        .padding(8)
+        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func contextTargetIDs(for thread: CodexThread) -> Set<String> {
+        model.selectedThreadIDs.contains(thread.id) ? model.selectedThreadIDs : [thread.id]
+    }
+
+    private func select(_ thread: CodexThread) {
+        let event = NSApp.currentEvent
+        let modifiers = event?.modifierFlags ?? []
+        let isCommand = modifiers.contains(.command)
+        let isShift = modifiers.contains(.shift)
+
+        if isShift, let rangeSelection = rangeSelection(to: thread.id) {
+            model.updateThreadSelection(rangeSelection, preferredID: thread.id)
+            return
+        }
+
+        if isCommand {
+            var next = model.selectedThreadIDs
+            if next.contains(thread.id) {
+                next.remove(thread.id)
+            } else {
+                next.insert(thread.id)
+            }
+            if next.isEmpty {
+                next.insert(thread.id)
+            }
+            rangeAnchorID = thread.id
+            model.updateThreadSelection(next, preferredID: thread.id)
+            return
+        }
+
+        rangeAnchorID = thread.id
+        model.updateThreadSelection([thread.id], preferredID: thread.id)
+    }
+
+    private func rangeSelection(to threadID: String) -> Set<String>? {
+        let anchor = rangeAnchorID ?? model.selectedThreadID ?? model.selectedThreadIDs.first
+        guard let anchor,
+              let anchorIndex = model.filteredThreads.firstIndex(where: { $0.id == anchor }),
+              let targetIndex = model.filteredThreads.firstIndex(where: { $0.id == threadID })
+        else { return nil }
+
+        let bounds = min(anchorIndex, targetIndex)...max(anchorIndex, targetIndex)
+        return Set(model.filteredThreads[bounds].map(\.id))
+    }
+}
+
+private struct ThreadContextMenu: View {
+    @EnvironmentObject private var model: AppModel
+
+    let thread: CodexThread
+    let targetIDs: Set<String>
+    @Binding var isMoveSheetPresented: Bool
+
+    var body: some View {
+        Button {
+            model.focusContextSelection(on: thread)
+            Task { await model.wakeThreads(ids: targetIDs) }
+        } label: {
+            Label(targetIDs.count > 1 ? "Wake Selected Chats" : "Wake Chat", systemImage: "alarm")
+        }
+        .disabled(model.isLoading)
+
+        Button {
+            model.focusContextSelection(on: thread)
+            isMoveSheetPresented = true
+        } label: {
+            Label(targetIDs.count > 1 ? "Move Selected Chats..." : "Move Chat...", systemImage: "arrow.right.folder")
+        }
+        .disabled(model.isLoading || targetIDs.isEmpty)
+
+        Divider()
+
+        Button {
+            model.focusContextSelection(on: thread)
+            model.revealThreadsInFinder(ids: targetIDs)
+        } label: {
+            Label("Reveal in Finder", systemImage: "folder")
+        }
+        .disabled(model.isDemoMode)
+
+        Button {
+            model.focusContextSelection(on: thread)
+            model.copyThreadPaths(ids: targetIDs)
+        } label: {
+            Label("Copy Path", systemImage: "doc.on.doc")
+        }
+        .disabled(model.isDemoMode)
     }
 }
 
 private struct ThreadRow: View {
     let thread: CodexThread
+    let isSelected: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline) {
                 Text(thread.shortTitle)
                     .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(isSelected ? .white : .primary)
                     .lineLimit(2)
                 Spacer()
                 StatusPill(text: thread.statusLabel, thread: thread)
@@ -91,7 +247,7 @@ private struct ThreadRow: View {
 
             Text(thread.cwd)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(isSelected ? .white.opacity(0.82) : .secondary)
                 .lineLimit(1)
 
             HStack(spacing: 8) {
@@ -102,10 +258,16 @@ private struct ThreadRow: View {
                 Spacer()
             }
             .font(.caption2)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(isSelected ? .white.opacity(0.82) : .secondary)
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 6)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(selectionBackground, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var selectionBackground: Color {
+        isSelected ? Color.accentColor : Color.clear
     }
 }
 

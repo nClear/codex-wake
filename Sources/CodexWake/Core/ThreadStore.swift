@@ -6,4 +6,6 @@ protocol ThreadStore: Sendable {
     func threadContainsRawText(_ thread: CodexThread, query: String) throws -> Bool
     func wake(thread: CodexThread) throws -> WakeReport
     func move(thread: CodexThread, to project: ProjectSummary) throws -> MoveReport
+    func loadBackups() throws -> [BackupFile]
+    func deleteBackups(paths: Set<String>) throws -> Int
 }

@@ -12,8 +12,7 @@ struct ThreadDetailView: View {
                         header(thread)
                         metadata(thread)
                         actions(thread)
-                        wakeReport
-                        moveReport
+                        operationReport
                         preview
                     }
                     .padding(22)
@@ -22,6 +21,10 @@ struct ThreadDetailView: View {
             } else {
                 ContentUnavailableView("Select a chat", systemImage: "text.bubble")
             }
+        }
+        .sheet(isPresented: $isMoveSheetPresented) {
+            MoveThreadSheet(isPresented: $isMoveSheetPresented)
+                .environmentObject(model)
         }
     }
 
@@ -65,6 +68,7 @@ struct ThreadDetailView: View {
     private func actions(_ thread: CodexThread) -> some View {
         HStack(spacing: 10) {
             Button {
+                model.selectThread(thread)
                 Task { await model.wakeSelectedThread() }
             } label: {
                 Label("Wake", systemImage: "alarm")
@@ -74,6 +78,7 @@ struct ThreadDetailView: View {
             .help(model.isDemoMode ? "Show a demo wake report without changing local files" : "Back up metadata, update dates, and make the chat recent in Codex App")
 
             Button {
+                model.selectThread(thread)
                 isMoveSheetPresented = true
             } label: {
                 Label("Move", systemImage: "arrow.right.folder")
@@ -81,12 +86,9 @@ struct ThreadDetailView: View {
             .buttonStyle(.bordered)
             .disabled(model.isLoading || model.moveTargetProjects.isEmpty || thread.archived || !thread.fileExists)
             .help("Move this chat to another known project")
-            .sheet(isPresented: $isMoveSheetPresented) {
-                MoveThreadSheet(isPresented: $isMoveSheetPresented)
-                    .environmentObject(model)
-            }
 
             Button {
+                model.selectThread(thread)
                 model.revealSelectedInFinder()
             } label: {
                 Label("Reveal", systemImage: "folder")
@@ -95,6 +97,7 @@ struct ThreadDetailView: View {
             .disabled(model.isDemoMode)
 
             Button {
+                model.selectThread(thread)
                 model.copySelectedPath()
             } label: {
                 Label("Copy Path", systemImage: "doc.on.doc")
@@ -105,31 +108,31 @@ struct ThreadDetailView: View {
     }
 
     @ViewBuilder
-    private var wakeReport: some View {
-        if let report = model.wakeReport {
+    private var operationReport: some View {
+        if let report = model.selectedOperationReport {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Wake complete")
-                    .font(.headline)
-                Text("Backups")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                ForEach(report.backups, id: \.self) { path in
-                    Text(path).font(.caption.monospaced()).textSelection(.enabled)
+                HStack {
+                    Text(report.title)
+                        .font(.headline)
+                    Spacer()
+                    Text(report.timestamp)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
-            }
-            .padding(12)
-            .background(Color.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-        }
-    }
 
-    @ViewBuilder
-    private var moveReport: some View {
-        if let report = model.moveReport {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Move complete")
-                    .font(.headline)
-                row("From", report.fromProject)
-                row("To", report.toProject)
+                Text(report.summary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+
+                if !report.changedFiles.isEmpty {
+                    Text("Changed files")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    ForEach(report.changedFiles, id: \.self) { path in
+                        Text(path).font(.caption.monospaced()).textSelection(.enabled)
+                    }
+                }
+
                 if !report.backups.isEmpty {
                     Text("Backups")
                         .font(.caption.weight(.semibold))
@@ -138,10 +141,18 @@ struct ThreadDetailView: View {
                         Text(path).font(.caption.monospaced()).textSelection(.enabled)
                     }
                 }
+
+                if !report.failures.isEmpty {
+                    Text("Failures")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.red)
+                    ForEach(report.failures, id: \.self) { failure in
+                        Text(failure).font(.caption).foregroundStyle(.red)
+                    }
+                }
             }
-            .font(.system(size: 12))
             .padding(12)
-            .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            .background(report.failures.isEmpty ? Color.green.opacity(0.08) : Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
         }
     }
 
@@ -165,7 +176,7 @@ struct ThreadDetailView: View {
     }
 }
 
-private struct MoveThreadSheet: View {
+struct MoveThreadSheet: View {
     @EnvironmentObject private var model: AppModel
     @Binding var isPresented: Bool
     @State private var selectedProjectID: String?
@@ -173,14 +184,12 @@ private struct MoveThreadSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Move Chat")
+                Text(model.selectedThreadCount > 1 ? "Move Chats" : "Move Chat")
                     .font(.title3.weight(.semibold))
-                if let thread = model.selectedThread {
-                    Text(thread.shortTitle)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
+                Text(selectionSummary)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
 
             List(model.moveTargetProjects, selection: $selectedProjectID) { project in
@@ -213,7 +222,7 @@ private struct MoveThreadSheet: View {
                 Button("Move") {
                     guard let selectedProject else { return }
                     isPresented = false
-                    Task { await model.moveSelectedThread(to: selectedProject) }
+                    Task { await model.moveSelectedThreads(to: selectedProject) }
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(selectedProject == nil)
@@ -225,6 +234,13 @@ private struct MoveThreadSheet: View {
         .onAppear {
             selectedProjectID = model.moveTargetProjects.first?.id
         }
+    }
+
+    private var selectionSummary: String {
+        if model.selectedThreadCount > 1 {
+            return "\(model.selectedThreadCount) selected chats"
+        }
+        return model.selectedThread?.shortTitle ?? "No chat selected"
     }
 
     private var selectedProject: ProjectSummary? {

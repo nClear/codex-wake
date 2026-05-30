@@ -141,6 +141,34 @@ struct MoveReport: Identifiable {
     let changedFiles: [String]
 }
 
+struct OperationReport: Identifiable {
+    let id = UUID()
+    let title: String
+    let threadIDs: Set<String>
+    let timestamp: String
+    let summary: String
+    let backups: [String]
+    let changedFiles: [String]
+    let failures: [String]
+}
+
+struct BackupFile: Identifiable, Hashable {
+    var id: String { path }
+
+    let path: String
+    let originalName: String
+    let directory: String
+    let stamp: String
+    let size: Int64
+    let modifiedAt: Date
+
+    var url: URL { URL(fileURLWithPath: path) }
+
+    var sizeLabel: String {
+        ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+    }
+}
+
 extension String {
     var oneLine: String {
         replacingOccurrences(of: "\n", with: " ")
