@@ -66,26 +66,27 @@ struct ThreadListView: View {
 
             Divider()
 
-            List {
-                ForEach(model.filteredThreads) { thread in
-                    ThreadRow(thread: thread, isSelected: model.selectedThreadIDs.contains(thread.id))
-                        .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
-                        .listRowSeparator(.hidden)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            select(thread)
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    ForEach(model.filteredThreads) { thread in
+                        ThreadRow(thread: thread, isSelected: model.selectedThreadIDs.contains(thread.id))
+                            .contentShape(RoundedRectangle(cornerRadius: 8))
+                            .onTapGesture {
+                                select(thread)
+                            }
+                            .contextMenu {
+                                ThreadContextMenu(
+                                    thread: thread,
+                                    targetIDs: contextTargetIDs(for: thread),
+                                    isMoveSheetPresented: $isMoveSheetPresented
+                                )
+                                .environmentObject(model)
+                            }
                         }
-                        .contextMenu {
-                            ThreadContextMenu(
-                                thread: thread,
-                                targetIDs: contextTargetIDs(for: thread),
-                                isMoveSheetPresented: $isMoveSheetPresented
-                            )
-                            .environmentObject(model)
-                        }
-                }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 8)
             }
-            .listStyle(.plain)
         }
         .sheet(isPresented: $isMoveSheetPresented) {
             MoveThreadSheet(isPresented: $isMoveSheetPresented)
