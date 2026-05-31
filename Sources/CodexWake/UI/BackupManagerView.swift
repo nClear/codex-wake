@@ -26,6 +26,7 @@ struct BackupManagerView: View {
             footer
         }
         .frame(width: 760, height: 520)
+        .liquidGlassBackground
         .task {
             await model.refreshBackups()
         }
@@ -64,7 +65,7 @@ struct BackupManagerView: View {
             } label: {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
-            .buttonStyle(.bordered)
+            .liquidGlassButtonStyle()
             .disabled(model.isLoadingBackups)
 
             Button {
@@ -72,10 +73,11 @@ struct BackupManagerView: View {
             } label: {
                 Image(systemName: "xmark")
             }
-            .buttonStyle(.bordered)
+            .liquidGlassButtonStyle()
             .help("Close")
         }
         .padding(16)
+        .liquidGlassContainer(spacing: 10)
     }
 
     private var backupList: some View {
@@ -136,6 +138,7 @@ struct BackupManagerView: View {
             }
             .disabled(model.selectedBackupIDs.isEmpty)
         }
+        .scrollContentBackground(.hidden)
     }
 
     private var footer: some View {
@@ -180,5 +183,6 @@ struct BackupManagerView: View {
         }
         .font(.caption)
         .padding(12)
+        .liquidGlassContainer(spacing: 10)
     }
 }

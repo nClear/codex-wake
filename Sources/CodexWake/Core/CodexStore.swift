@@ -7,6 +7,9 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
     private let stateDB: URL
     private let sessionIndex: URL
     private let backupMarker = ".codex-rescue-backup-"
+    private let previewReadLimit = 2 * 1024 * 1024
+    private let previewContextLimit = 6
+    private let previewRecentMessageLimit = 24
 
     init(codexHome: URL? = nil) {
         let home = codexHome ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
@@ -54,20 +57,35 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
             throw WakeError.missingThreadFile(thread.rolloutPath)
         }
 
-        let content = try readPrefix(of: URL(fileURLWithPath: thread.rolloutPath), maxBytes: 2 * 1024 * 1024)
-        var messages: [PreviewMessage] = []
-        for line in content.split(separator: "\n", omittingEmptySubsequences: true) {
-            guard messages.count < 40,
-                  let data = String(line).data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            else { continue }
+        let previewLines = try readPreviewLines(from: URL(fileURLWithPath: thread.rolloutPath), maxBytes: previewReadLimit)
+        var contextMessages: [PreviewMessage] = []
+        var recentMessages: [PreviewMessage] = []
 
-            if let message = extractMessage(from: obj) {
-                messages.append(message)
+        for line in previewLines.prefixLines.enumerated() {
+            guard contextMessages.count < previewContextLimit else { break }
+            guard let message = decodePreviewMessage(line.element, fallbackID: "prefix-\(line.offset)") else { continue }
+            guard message.isContextMessage else { continue }
+            contextMessages.append(message.withID("context-\(contextMessages.count)-\(message.id)"))
+        }
+
+        for line in previewLines.suffixLines.enumerated() {
+            guard var message = decodePreviewMessage(line.element, fallbackID: "suffix-\(line.offset)") else { continue }
+            guard !message.isContextMessage else { continue }
+            message = message.withID("recent-\(line.offset)-\(message.id)")
+            recentMessages.append(message)
+            if recentMessages.count > previewRecentMessageLimit {
+                recentMessages.removeFirst(recentMessages.count - previewRecentMessageLimit)
             }
         }
 
-        return ThreadPreview(threadID: thread.id, messages: messages, rawError: nil)
+        return ThreadPreview(threadID: thread.id, messages: contextMessages + recentMessages, rawError: nil)
+    }
+
+    private func decodePreviewMessage(_ line: String, fallbackID: String) -> PreviewMessage? {
+            guard let data = line.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return nil }
+            return extractMessage(from: obj, fallbackID: fallbackID)
     }
 
     func threadContainsRawText(_ thread: CodexThread, query: String) throws -> Bool {
@@ -302,6 +320,34 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
         return String(data: data, encoding: .utf8) ?? ""
     }
 
+    private func readPreviewLines(from url: URL, maxBytes: Int) throws -> (prefixLines: [String], suffixLines: [String]) {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+
+        let attributes = try fileManager.attributesOfItem(atPath: url.path)
+        let fileSize = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+
+        let prefixText = String(data: handle.readData(ofLength: min(maxBytes, Int(fileSize))), encoding: .utf8) ?? ""
+
+        let suffixText: String
+        if fileSize > UInt64(maxBytes) {
+            try handle.seek(toOffset: fileSize - UInt64(maxBytes))
+            suffixText = String(data: handle.readData(ofLength: maxBytes), encoding: .utf8) ?? ""
+        } else {
+            suffixText = prefixText
+        }
+
+        var suffixLines = suffixText.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+        if fileSize > UInt64(maxBytes), !suffixText.hasPrefix("\n"), !suffixLines.isEmpty {
+            suffixLines.removeFirst()
+        }
+
+        return (
+            prefixLines: prefixText.split(separator: "\n", omittingEmptySubsequences: true).map(String.init),
+            suffixLines: suffixLines
+        )
+    }
+
     private func firstCapture(in text: String, pattern: String) -> String? {
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
@@ -311,21 +357,30 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
         return String(text[range])
     }
 
-    private func extractMessage(from obj: [String: Any]) -> PreviewMessage? {
+    private func extractMessage(from obj: [String: Any], fallbackID: String) -> PreviewMessage? {
+        let id = messageID(from: obj) ?? fallbackID
         let timestamp = obj["timestamp"] as? String
         guard let payload = obj["payload"] as? [String: Any] else { return nil }
 
         if let type = payload["type"] as? String, type == "message" {
             let role = payload["role"] as? String ?? "message"
             let text = extractContentText(payload["content"])
-            if !text.isEmpty { return PreviewMessage(role: role, text: text.prefixString(1200), timestamp: timestamp) }
+            if !text.isEmpty { return PreviewMessage(id: id, role: role, text: text.prefixString(1200), timestamp: timestamp) }
         }
 
         if let type = obj["type"] as? String, type == "user_message",
            let text = payload["message"] as? String {
-            return PreviewMessage(role: "user", text: text.prefixString(1200), timestamp: timestamp)
+            return PreviewMessage(id: id, role: "user", text: text.prefixString(1200), timestamp: timestamp)
         }
 
+        return nil
+    }
+
+    private func messageID(from obj: [String: Any]) -> String? {
+        if let id = obj["id"] as? String { return id }
+        guard let payload = obj["payload"] as? [String: Any] else { return nil }
+        if let id = payload["id"] as? String { return id }
+        if let id = payload["message_id"] as? String { return id }
         return nil
     }
 

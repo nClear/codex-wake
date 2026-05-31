@@ -22,11 +22,18 @@ final class AppModel: ObservableObject {
     @Published private(set) var backups: [BackupFile] = []
     @Published private(set) var isLoadingBackups = false
     @Published var preview: ThreadPreview?
+    @Published private(set) var isPreviewLoading = false
     @Published var operationReport: OperationReport?
     @Published private(set) var isDemoMode: Bool
 
     private let store: any ThreadStore
     private var deepSearchTask: Task<Void, Never>?
+    private var previewTask: Task<Void, Never>?
+    private var previewDebounceTask: Task<Void, Never>?
+    private var previewCache: [String: ThreadPreview] = [:]
+    private var previewCacheOrder: [String] = []
+    private let previewCacheLimit = 80
+    private let keyboardPreviewDelayNanoseconds: UInt64 = 180_000_000
 
     var selectedThread: CodexThread? {
         threads.first { $0.id == selectedThreadID }
@@ -84,7 +91,13 @@ final class AppModel: ObservableObject {
     init(demoMode: Bool = AppModel.detectDemoMode(), store: (any ThreadStore)? = nil) {
         self.isDemoMode = demoMode
         self.store = store ?? (demoMode ? DemoCodexStore() : CodexStore())
-        Task { await refresh() }
+        Task { [weak self] in await self?.refresh() }
+    }
+
+    deinit {
+        deepSearchTask?.cancel()
+        previewTask?.cancel()
+        previewDebounceTask?.cancel()
     }
 
     func refresh() async {
@@ -109,7 +122,7 @@ final class AppModel: ObservableObject {
             if let selectedThreadID {
                 await loadPreview(threadID: selectedThreadID)
             } else {
-                preview = nil
+                cancelPreviewLoad(clearPreview: true)
             }
         } catch {
             errorMessage = Self.readable(error)
@@ -134,16 +147,73 @@ final class AppModel: ObservableObject {
     }
 
     func loadPreview(threadID: String) async {
-        guard let thread = threads.first(where: { $0.id == threadID }) else {
-            preview = nil
+        previewDebounceTask?.cancel()
+        previewDebounceTask = nil
+        previewTask?.cancel()
+        previewTask = nil
+        await loadPreviewNow(threadID: threadID)
+    }
+
+    private func startPreviewLoad(threadID: String, delayNanoseconds: UInt64 = 0) {
+        previewDebounceTask?.cancel()
+        previewDebounceTask = nil
+        previewTask?.cancel()
+        previewTask = nil
+
+        guard delayNanoseconds > 0 else {
+            previewTask = Task { [weak self] in
+                await self?.loadPreviewNow(threadID: threadID)
+            }
             return
         }
+
+        previewDebounceTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: delayNanoseconds)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await self?.loadPreviewNow(threadID: threadID)
+            guard !Task.isCancelled else { return }
+            self?.clearPreviewDebounceTask()
+        }
+    }
+
+    private func clearPreviewDebounceTask() {
+        previewDebounceTask = nil
+    }
+
+    private func startKeyboardPreviewLoad(threadID: String) {
+        startPreviewLoad(threadID: threadID, delayNanoseconds: keyboardPreviewDelayNanoseconds)
+    }
+
+    private func loadPreviewNow(threadID: String) async {
+        guard let thread = threads.first(where: { $0.id == threadID }) else {
+            cancelPreviewLoad(clearPreview: true)
+            return
+        }
+        if let cached = cachedPreview(for: threadID) {
+            preview = cached
+            isPreviewLoading = false
+            return
+        }
+
+        preview = nil
+        isPreviewLoading = true
         do {
-            preview = try await Task.detached(priority: .userInitiated) {
-                try self.store.loadPreview(for: thread)
+            let store = self.store
+            let loadedPreview = try await Task.detached(priority: .userInitiated) {
+                try store.loadPreview(for: thread)
             }.value
+            guard !Task.isCancelled, selectedThreadID == threadID else { return }
+            cachePreview(loadedPreview)
+            preview = loadedPreview
+            isPreviewLoading = false
         } catch {
+            guard !Task.isCancelled, selectedThreadID == threadID else { return }
             preview = ThreadPreview(threadID: thread.id, messages: [], rawError: Self.readable(error))
+            isPreviewLoading = false
         }
     }
 
@@ -206,6 +276,7 @@ final class AppModel: ObservableObject {
         )
         status = result.failures.isEmpty ? "Wake complete" : "Wake completed with \(result.failures.count) failures"
 
+        invalidatePreviewCache(for: result.successIDs)
         let idsToKeep = ids
         await refresh()
         setSelection(idsToKeep, shouldLoadPreview: true)
@@ -268,6 +339,7 @@ final class AppModel: ObservableObject {
         )
         status = result.failures.isEmpty ? "Moved to \(project.name)" : "Move completed with \(result.failures.count) failures"
 
+        invalidatePreviewCache(for: result.successIDs)
         await refresh()
         selectedProjectID = project.id
         setSelection(result.successIDs.isEmpty ? Set(targets.map(\.id)) : result.successIDs, shouldLoadPreview: true)
@@ -388,7 +460,7 @@ final class AppModel: ObservableObject {
         let metadataMatches = source.filter { $0.matchesMetadata(query) }
         let store = self.store
 
-        deepSearchTask = Task {
+        deepSearchTask = Task { [weak self] in
             let rawMatches = await Task.detached(priority: .userInitiated) {
                 source.filter { thread in
                     if metadataMatches.contains(where: { $0.id == thread.id }) { return false }
@@ -396,11 +468,12 @@ final class AppModel: ObservableObject {
                 }
             }.value
 
-            guard !Task.isCancelled else { return }
-            filteredThreads = (metadataMatches + rawMatches).sorted { $0.updatedAt > $1.updatedAt }
-            selectFirstFilteredThreadIfNeeded()
-            isDeepSearching = false
-            status = "Deep search found \(filteredThreads.count) chats"
+            guard !Task.isCancelled, let self else { return }
+            self.filteredThreads = (metadataMatches + rawMatches).sorted { $0.updatedAt > $1.updatedAt }
+            self.selectFirstFilteredThreadIfNeeded()
+            self.isDeepSearching = false
+            self.status = "Deep search found \(self.filteredThreads.count) chats"
+            self.deepSearchTask = nil
         }
     }
 
@@ -420,8 +493,60 @@ final class AppModel: ObservableObject {
         status = "Search cleared"
     }
 
+    @discardableResult
+    func selectAdjacentThread(offset: Int, deferPreview: Bool = false) -> Bool {
+        guard !filteredThreads.isEmpty else { return false }
+
+        let currentIndex = selectedThreadID
+            .flatMap { selectedID in filteredThreads.firstIndex { $0.id == selectedID } }
+            ?? 0
+        let nextIndex = min(max(currentIndex + offset, 0), filteredThreads.count - 1)
+        guard nextIndex != currentIndex else { return false }
+
+        let nextThread = filteredThreads[nextIndex]
+        setSelection([nextThread.id], preferredID: nextThread.id, shouldLoadPreview: !deferPreview)
+        if deferPreview {
+            startKeyboardPreviewLoad(threadID: nextThread.id)
+        }
+        return true
+    }
+
+    @discardableResult
+    func selectThreadBoundary(_ boundary: BoundarySelection, deferPreview: Bool = false) -> Bool {
+        guard let target = boundary.target(in: filteredThreads) else { return false }
+        guard target.id != selectedThreadID else { return false }
+
+        setSelection([target.id], preferredID: target.id, shouldLoadPreview: !deferPreview)
+        if deferPreview {
+            startKeyboardPreviewLoad(threadID: target.id)
+        }
+        return true
+    }
+
+    @discardableResult
+    func selectAdjacentProject(offset: Int) -> Bool {
+        guard !projects.isEmpty else { return false }
+
+        let currentIndex = projects.firstIndex { $0.id == selectedProjectID } ?? 0
+        let nextIndex = min(max(currentIndex + offset, 0), projects.count - 1)
+        guard nextIndex != currentIndex else { return false }
+
+        selectedProjectID = projects[nextIndex].id
+        return true
+    }
+
+    @discardableResult
+    func selectProjectBoundary(_ boundary: BoundarySelection) -> Bool {
+        guard let target = boundary.target(in: projects) else { return false }
+        guard target.id != selectedProjectID else { return false }
+
+        selectedProjectID = target.id
+        return true
+    }
+
     private func applyFilters() {
         deepSearchTask?.cancel()
+        deepSearchTask = nil
         isDeepSearching = false
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let selectedProject = selectedProjectID
@@ -445,7 +570,7 @@ final class AppModel: ObservableObject {
         guard !filteredThreads.isEmpty else {
             selectedThreadIDs = []
             selectedThreadID = nil
-            preview = nil
+            cancelPreviewLoad(clearPreview: true)
             return
         }
 
@@ -471,12 +596,56 @@ final class AppModel: ObservableObject {
             nextID = filteredThreads.first(where: { validIDs.contains($0.id) })?.id
         }
 
-        guard nextID != selectedThreadID else { return }
-        selectedThreadID = nextID
-        preview = nil
-        if shouldLoadPreview, let nextID {
-            Task { await loadPreview(threadID: nextID) }
+        guard nextID != selectedThreadID else {
+            if shouldLoadPreview,
+               let nextID,
+               preview?.threadID != nextID,
+               !isPreviewLoading {
+                startPreviewLoad(threadID: nextID)
+            }
+            return
         }
+        selectedThreadID = nextID
+        cancelPreviewLoad(clearPreview: true)
+        if shouldLoadPreview, let nextID {
+            startPreviewLoad(threadID: nextID)
+        }
+    }
+
+    private func cancelPreviewLoad(clearPreview: Bool) {
+        previewDebounceTask?.cancel()
+        previewDebounceTask = nil
+        previewTask?.cancel()
+        previewTask = nil
+        isPreviewLoading = false
+        if clearPreview {
+            preview = nil
+        }
+    }
+
+    private func cachedPreview(for threadID: String) -> ThreadPreview? {
+        guard let cached = previewCache[threadID] else { return nil }
+        previewCacheOrder.removeAll { $0 == threadID }
+        previewCacheOrder.append(threadID)
+        return cached
+    }
+
+    private func cachePreview(_ threadPreview: ThreadPreview) {
+        previewCache[threadPreview.threadID] = threadPreview
+        previewCacheOrder.removeAll { $0 == threadPreview.threadID }
+        previewCacheOrder.append(threadPreview.threadID)
+        while previewCacheOrder.count > previewCacheLimit {
+            let removedID = previewCacheOrder.removeFirst()
+            previewCache.removeValue(forKey: removedID)
+        }
+    }
+
+    private func invalidatePreviewCache(for threadIDs: Set<String>) {
+        guard !threadIDs.isEmpty else { return }
+        for threadID in threadIDs {
+            previewCache.removeValue(forKey: threadID)
+        }
+        previewCacheOrder.removeAll { threadIDs.contains($0) }
     }
 
     private func orderedThreads(for ids: Set<String>) -> [CodexThread] {
@@ -504,6 +673,18 @@ final class AppModel: ObservableObject {
         let args = ProcessInfo.processInfo.arguments
         let env = ProcessInfo.processInfo.environment
         return args.contains("--demo") || env["CODEX_WAKE_DEMO"] == "1"
+    }
+}
+
+enum BoundarySelection {
+    case first
+    case last
+
+    func target<T>(in values: [T]) -> T? {
+        switch self {
+        case .first: values.first
+        case .last: values.last
+        }
     }
 }
 

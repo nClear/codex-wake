@@ -1,25 +1,56 @@
 import SwiftUI
+import AppKit
 
 struct ThreadDetailView: View {
     @EnvironmentObject private var model: AppModel
+    @Binding var activePane: WakeFocusPane
     @State private var isMoveSheetPresented = false
+    @State private var detailScrollViewBox = WeakScrollViewBox()
 
     var body: some View {
         Group {
             if let thread = model.selectedThread {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        header(thread)
-                        metadata(thread)
-                        actions(thread)
-                        operationReport
-                        preview
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            DetailScrollViewAccessor(scrollViewBox: detailScrollViewBox)
+                                .frame(width: 0, height: 0)
+                            Color.clear
+                                .frame(height: 1)
+                                .id(DetailScrollTarget.top)
+                            header(thread)
+                            metadata(thread)
+                            actions(thread)
+                            operationReport
+                            preview
+                            Color.clear
+                                .frame(height: 1)
+                                .id(DetailScrollTarget.bottom)
+                        }
+                        .padding(22)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(22)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .id(model.selectedThreadID)
+                    .onTapGesture {
+                        setActivePane(.detail)
+                    }
+                    .onChange(of: model.selectedThreadID) { _, _ in
+                        detailScrollViewBox = WeakScrollViewBox()
+                        scrollDetailToTop(proxy: proxy)
+                    }
+                    .onAppear {
+                        scrollDetailToTop(proxy: proxy)
+                    }
+                    .onReceive(NotificationCenter.default.publisher(for: .codexWakeScrollDetail)) { notification in
+                        guard let action = notification.object as? WakeDetailScrollAction else { return }
+                        handleDetailScroll(action, proxy: proxy)
+                    }
                 }
             } else {
                 ContentUnavailableView("Select a chat", systemImage: "text.bubble")
+                    .onTapGesture {
+                        setActivePane(.detail)
+                    }
             }
         }
         .sheet(isPresented: $isMoveSheetPresented) {
@@ -33,10 +64,13 @@ struct ThreadDetailView: View {
             Text(thread.shortTitle)
                 .font(.title2.weight(.semibold))
                 .textSelection(.enabled)
-            Text(thread.id)
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
+            HStack(spacing: 6) {
+                Text(thread.id)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                CopyFeedbackButton(text: thread.id, help: "Copy chat ID")
+            }
         }
     }
 
@@ -73,7 +107,7 @@ struct ThreadDetailView: View {
             } label: {
                 Label("Wake", systemImage: "alarm")
             }
-            .buttonStyle(.borderedProminent)
+            .liquidGlassProminentButtonStyle()
             .disabled(model.isLoading || thread.archived || !thread.fileExists)
             .help(model.isDemoMode ? "Show a demo wake report without changing local files" : "Back up metadata, update dates, and make the chat recent in Codex App")
 
@@ -81,9 +115,9 @@ struct ThreadDetailView: View {
                 model.selectThread(thread)
                 isMoveSheetPresented = true
             } label: {
-                Label("Move", systemImage: "arrow.right.folder")
+                Label("Move", systemImage: "folder.badge.plus")
             }
-            .buttonStyle(.bordered)
+            .liquidGlassButtonStyle()
             .disabled(model.isLoading || model.moveTargetProjects.isEmpty || thread.archived || !thread.fileExists)
             .help("Move this chat to another known project")
 
@@ -93,18 +127,20 @@ struct ThreadDetailView: View {
             } label: {
                 Label("Reveal", systemImage: "folder")
             }
-            .buttonStyle(.bordered)
+            .liquidGlassButtonStyle()
             .disabled(model.isDemoMode)
 
-            Button {
-                model.selectThread(thread)
-                model.copySelectedPath()
-            } label: {
-                Label("Copy Path", systemImage: "doc.on.doc")
-            }
-            .buttonStyle(.bordered)
+            CopyFeedbackButton(
+                text: thread.rolloutPath,
+                help: "Copy chat path",
+                label: "Copy Path",
+                usesPlainButtonStyle: false,
+                normalForeground: .primary
+            )
+            .liquidGlassButtonStyle()
             .disabled(model.isDemoMode)
         }
+        .liquidGlassContainer(spacing: 10)
     }
 
     @ViewBuilder
@@ -152,7 +188,10 @@ struct ThreadDetailView: View {
                 }
             }
             .padding(12)
-            .background(report.failures.isEmpty ? Color.green.opacity(0.08) : Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+            .liquidGlassSurface(
+                in: RoundedRectangle.compactLiquidGlass,
+                tint: report.failures.isEmpty ? .green.opacity(0.14) : .orange.opacity(0.16)
+            )
         }
     }
 
@@ -165,14 +204,183 @@ struct ThreadDetailView: View {
                 Text(rawError)
                     .foregroundStyle(.red)
             } else if let messages = model.preview?.messages, !messages.isEmpty {
-                ForEach(messages) { message in
-                    MessagePreview(message: message)
+                PreviewMessagesView(messages: messages)
+            } else if model.isPreviewLoading {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Loading preview...")
+                        .foregroundStyle(.secondary)
                 }
+                .font(.callout)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .liquidGlassSurface(in: RoundedRectangle.compactLiquidGlass, interactive: true, fallbackMaterial: .thinMaterial)
             } else {
                 Text("No message preview parsed yet.")
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func setActivePane(_ pane: WakeFocusPane) {
+        activePane = pane
+    }
+
+    @discardableResult
+    private func scrollDetail(by direction: CGFloat, pageScale: CGFloat = 0.62) -> DetailScrollBoundary {
+        guard let scrollView = detailScrollViewBox.scrollView,
+              let documentView = scrollView.documentView
+        else { return .unknown }
+
+        let visibleHeight = scrollView.contentView.bounds.height
+        let maxY = max(documentView.bounds.height - visibleHeight, 0)
+        let delta = max(96, min(visibleHeight * 0.92, visibleHeight * pageScale))
+        let signedDelta = documentView.isFlipped ? direction * delta : -direction * delta
+        var origin = scrollView.contentView.bounds.origin
+        origin.y = min(max(origin.y + signedDelta, 0), maxY)
+        scrollView.contentView.scroll(to: origin)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+
+        let topY = documentView.isFlipped ? 0 : maxY
+        let bottomY = documentView.isFlipped ? maxY : 0
+        if abs(origin.y - topY) < 1 {
+            return .top
+        }
+        if abs(origin.y - bottomY) < 1 {
+            return .bottom
+        }
+        return .middle
+    }
+
+    private func handleDetailScroll(_ action: WakeDetailScrollAction, proxy: ScrollViewProxy) {
+        switch action {
+        case .step(let direction):
+            let boundary = scrollDetail(by: CGFloat(direction), pageScale: 0.46)
+            alignDetailIfNeeded(boundary, direction: direction, proxy: proxy)
+        case .page(let direction):
+            let boundary = scrollDetail(by: CGFloat(direction), pageScale: 0.86)
+            alignDetailIfNeeded(boundary, direction: direction, proxy: proxy)
+        case .top:
+            scrollDetailToTop(proxy: proxy)
+        case .bottom:
+            scrollDetailToBottom(proxy: proxy)
+        }
+    }
+
+    private func alignDetailIfNeeded(_ boundary: DetailScrollBoundary, direction: Double, proxy: ScrollViewProxy) {
+        switch (boundary, direction) {
+        case (.top, ..<0):
+            scrollDetailToTop(proxy: proxy)
+        case (.bottom, 0...):
+            scrollDetailToBottom(proxy: proxy)
+        default:
+            break
+        }
+    }
+
+    private func scrollDetailToTop(proxy: ScrollViewProxy) {
+        scrollDetailToTopNow(proxy: proxy)
+        DispatchQueue.main.async {
+            scrollDetailToTopNow(proxy: proxy)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            scrollDetailToTopNow(proxy: proxy)
+        }
+    }
+
+    private func scrollDetailToTopNow(proxy: ScrollViewProxy) {
+        proxy.scrollTo(DetailScrollTarget.top, anchor: .top)
+    }
+
+    private func scrollDetailToBottom(proxy: ScrollViewProxy) {
+        setDetailScrollBoundary(.bottom)
+        proxy.scrollTo(DetailScrollTarget.bottom, anchor: .bottom)
+    }
+
+    private func setDetailScrollBoundary(_ boundary: DetailScrollBoundary) {
+        guard let scrollView = detailScrollViewBox.scrollView,
+              let documentView = scrollView.documentView
+        else { return }
+
+        let visibleHeight = scrollView.contentView.bounds.height
+        let maxY = max(documentView.bounds.height - visibleHeight, 0)
+        let topY = documentView.isFlipped ? 0 : maxY
+        let bottomY = documentView.isFlipped ? maxY : 0
+        var origin = scrollView.contentView.bounds.origin
+
+        switch boundary {
+        case .top:
+            origin.y = topY
+        case .bottom:
+            origin.y = bottomY
+        case .middle, .unknown:
+            return
+        }
+
+        scrollView.contentView.scroll(to: origin)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+}
+
+private enum DetailScrollTarget {
+    static let top = "detail-top"
+    static let bottom = "detail-bottom"
+}
+
+private enum DetailScrollBoundary {
+    case top
+    case middle
+    case bottom
+    case unknown
+}
+
+private final class WeakScrollViewBox {
+    weak var scrollView: NSScrollView?
+}
+
+private struct DetailScrollViewAccessor: NSViewRepresentable {
+    let scrollViewBox: WeakScrollViewBox
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        updateScrollView(from: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        updateScrollView(from: nsView)
+    }
+
+    private func updateScrollView(from view: NSView) {
+        assignScrollView(from: view)
+        DispatchQueue.main.async {
+            assignScrollView(from: view)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            assignScrollView(from: view)
+        }
+    }
+
+    private func assignScrollView(from view: NSView) {
+        if let scrollView = findScrollView(from: view) {
+            scrollViewBox.scrollView = scrollView
+        }
+    }
+
+    private func findScrollView(from view: NSView) -> NSScrollView? {
+        if let enclosing = view.enclosingScrollView {
+            return enclosing
+        }
+
+        var current = view.superview
+        while let candidate = current {
+            if let scrollView = candidate as? NSScrollView {
+                return scrollView
+            }
+            current = candidate.superview
+        }
+        return nil
     }
 }
 
@@ -224,13 +432,14 @@ struct MoveThreadSheet: View {
                     isPresented = false
                     Task { await model.moveSelectedThreads(to: selectedProject) }
                 }
-                .buttonStyle(.borderedProminent)
+                .liquidGlassProminentButtonStyle()
                 .disabled(selectedProject == nil)
                 .keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
         .frame(width: 460, height: 380)
+        .liquidGlassBackground
         .onAppear {
             selectedProjectID = model.moveTargetProjects.first?.id
         }
@@ -246,29 +455,5 @@ struct MoveThreadSheet: View {
     private var selectedProject: ProjectSummary? {
         guard let selectedProjectID else { return nil }
         return model.moveTargetProjects.first { $0.id == selectedProjectID }
-    }
-}
-
-private struct MessagePreview: View {
-    let message: PreviewMessage
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text(message.role)
-                    .font(.caption.weight(.semibold))
-                Spacer()
-                if let timestamp = message.timestamp {
-                    Text(timestamp)
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Text(message.text)
-                .font(.system(size: 13))
-                .textSelection(.enabled)
-        }
-        .padding(10)
-        .background(Color(NSColor.controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
     }
 }

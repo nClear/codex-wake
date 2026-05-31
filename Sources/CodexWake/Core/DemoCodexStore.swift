@@ -61,23 +61,43 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
     func loadPreview(for thread: CodexThread) throws -> ThreadPreview {
         let messages = [
             PreviewMessage(
+                id: "demo-user-1",
                 role: "user",
                 text: thread.firstUserMessage,
                 timestamp: WakeDates.isoDemo(thread.createdAt)
             ),
             PreviewMessage(
+                id: "demo-agent-1",
                 role: "assistant",
-                text: "I will inspect the local metadata shape first, then make the smallest safe change and verify it with a fresh build.",
+                text: """
+                I will inspect the **local metadata** shape first, then make the smallest safe change.
+
+                Plan:
+                - read `state_5.sqlite`
+                - update only the selected thread metadata
+                - verify with a fresh build
+                """,
                 timestamp: WakeDates.isoDemo(thread.createdAt.addingTimeInterval(90))
             ),
             PreviewMessage(
+                id: "demo-user-2",
                 role: "user",
                 text: "Good. Keep the original files untouched, make a backup before changing anything, and show me exactly what changed.",
                 timestamp: WakeDates.isoDemo(thread.createdAt.addingTimeInterval(240))
             ),
             PreviewMessage(
+                id: "demo-agent-2",
                 role: "assistant",
-                text: "Done. The demo data is intentionally synthetic, search works across titles and preview text, and write actions only update this temporary demo session.",
+                text: """
+                Done. The demo data is intentionally synthetic.
+
+                ```sh
+                swift build
+                open -n "dist/Codex Wake.app" --args --demo
+                ```
+
+                Search works across titles and preview text, and write actions only update this temporary demo session.
+                """,
                 timestamp: WakeDates.isoDemo(thread.updatedAt)
             )
         ]

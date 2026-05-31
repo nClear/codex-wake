@@ -117,10 +117,24 @@ struct ThreadPreview: Identifiable {
 }
 
 struct PreviewMessage: Identifiable, Hashable {
-    let id = UUID()
+    let id: String
     let role: String
     let text: String
     let timestamp: String?
+
+    var isContextMessage: Bool {
+        let normalizedRole = role.lowercased()
+        let normalizedText = text.lowercased()
+        return normalizedRole == "developer"
+            || normalizedRole == "system"
+            || normalizedText.hasPrefix("<environment_context>")
+            || normalizedText.hasPrefix("<permissions instructions>")
+            || normalizedText.hasPrefix("<app-context>")
+    }
+
+    func withID(_ id: String) -> PreviewMessage {
+        PreviewMessage(id: id, role: role, text: text, timestamp: timestamp)
+    }
 }
 
 struct WakeReport: Identifiable {

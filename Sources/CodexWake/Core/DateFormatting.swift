@@ -41,6 +41,10 @@ enum WakeDates {
         return displayFormatter.string(from: date)
     }
 
+    static func compactDisplay(_ date: Date) -> String {
+        compactDisplayFormatter.string(from: date)
+    }
+
     private static let isoBase: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
@@ -66,6 +70,12 @@ enum WakeDates {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private static let compactDisplayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d HH:mm"
         return formatter
     }()
 }
