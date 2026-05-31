@@ -35,15 +35,37 @@ struct ProjectSidebarView: View {
                 model.showBackups()
             } label: {
                 BackupSidebarRow(
+                    title: "Backups",
+                    systemImage: "archivebox",
                     count: model.backups.count,
                     totalSize: model.backupTotalSizeText,
-                    isSelected: model.selectedSection == .backups
+                    isSelected: model.selectedSection == .backups,
+                    accentColor: .accentColor
                 )
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .help("View Codex Wake backup files")
+
+            if !model.backupTrash.isEmpty {
+                Button {
+                    model.showBackupTrash()
+                } label: {
+                    BackupSidebarRow(
+                        title: "Trash",
+                        systemImage: "trash",
+                        count: model.backupTrash.count,
+                        totalSize: model.backupTrashTotalSizeText,
+                        isSelected: model.selectedSection == .backupTrash,
+                        accentColor: .red
+                    )
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 8)
+                .padding(.bottom, 6)
+                .help("View Codex Wake app trash")
+            }
 
             List(selection: $model.selectedProjectID) {
                 ForEach(model.projects) { project in
@@ -58,17 +80,20 @@ struct ProjectSidebarView: View {
 }
 
 private struct BackupSidebarRow: View {
+    let title: String
+    let systemImage: String
     let count: Int
     let totalSize: String
     let isSelected: Bool
+    let accentColor: Color
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                Image(systemName: "archivebox")
+                Image(systemName: systemImage)
                     .foregroundStyle(.secondary)
                     .frame(width: 16)
-                Text("Backups")
+                Text(title)
                     .font(.system(size: 15, weight: .semibold))
                 Spacer()
                 Text("\(count)")
@@ -88,7 +113,7 @@ private struct BackupSidebarRow: View {
         .padding(.horizontal, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .background(isSelected ? Color.accentColor.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+        .background(isSelected ? accentColor.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

@@ -4,6 +4,7 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
     private let baseDate = Date(timeIntervalSince1970: 1_779_750_000)
     private let lock = NSLock()
     private var movedProjects: [String: String] = [:]
+    private var trashedBackupIDs = Set<String>()
 
     func loadThreads() throws -> [CodexThread] {
         let projects = [
@@ -58,6 +59,16 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
     }
 
     func loadBackups() throws -> [BackupFile] {
+        return demoBackupSamples()
+            .filter { !trashedBackupSnapshot().contains($0.id) }
+    }
+
+    func loadBackupTrash() throws -> [BackupFile] {
+        demoBackupSamples()
+            .filter { trashedBackupSnapshot().contains($0.id) }
+    }
+
+    private func demoBackupSamples() -> [BackupFile] {
         let samples: [(String, BackupKind, Int64, Int)] = [
             ("state_5.sqlite", .stateDatabase, 2_400_000, 1),
             ("state_5.sqlite-wal", .stateDatabase, 180_000, 1),
@@ -144,6 +155,20 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
         )
     }
 
+    func moveBackupToTrash(_ backup: BackupFile) throws {
+        lock.lock()
+        trashedBackupIDs.insert(backup.id)
+        lock.unlock()
+    }
+
+    func emptyBackupTrash() throws -> Int {
+        lock.lock()
+        let count = trashedBackupIDs.count
+        trashedBackupIDs.removeAll()
+        lock.unlock()
+        return count
+    }
+
     private func samplePreview(title: String) -> String {
         "Preview for \(title): synthetic chat content for public screenshots, documentation, and safe UI testing."
     }
@@ -152,6 +177,12 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return movedProjects
+    }
+
+    private func trashedBackupSnapshot() -> Set<String> {
+        lock.lock()
+        defer { lock.unlock() }
+        return trashedBackupIDs
     }
 
     private func demoBackupStamp(_ date: Date) -> String {

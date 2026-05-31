@@ -1,12 +1,11 @@
 import SwiftUI
 
-struct BackupDetailView: View {
+struct BackupTrashDetailView: View {
     @EnvironmentObject private var model: AppModel
-    @State private var isMoveToTrashConfirmationPresented = false
 
     var body: some View {
         Group {
-            if let backup = model.selectedBackup {
+            if let backup = model.selectedTrashBackup {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
                         header(backup)
@@ -17,14 +16,14 @@ struct BackupDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
-                ContentUnavailableView("Select a backup", systemImage: "archivebox")
+                ContentUnavailableView("Select a trashed backup", systemImage: "trash")
             }
         }
     }
 
     private func header(_ backup: BackupFile) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(backup.kind.label, systemImage: backup.kind.systemImage)
+            Label("Trashed \(backup.kind.label)", systemImage: "trash")
                 .font(.title2.weight(.semibold))
             Text(backup.originalName)
                 .font(.caption.monospaced())
@@ -38,9 +37,8 @@ struct BackupDetailView: View {
             row("Created", WakeDates.display(backup.createdAt))
             row("Modified", WakeDates.display(backup.modifiedAt))
             row("Size", ByteCountFormatter.string(fromByteCount: backup.size, countStyle: .file))
-            row("Original exists", backup.originalExists ? "yes" : "no")
             row("Original path", backup.originalPath)
-            row("Backup path", backup.backupPath)
+            row("Trash path", backup.backupPath)
             row("Stamp", backup.stamp)
         }
         .font(.system(size: 12))
@@ -50,7 +48,7 @@ struct BackupDetailView: View {
     private var actions: some View {
         HStack(spacing: 10) {
             Button {
-                model.revealSelectedBackupInFinder()
+                model.revealSelectedTrashBackupInFinder()
             } label: {
                 Label("Reveal", systemImage: "folder")
             }
@@ -58,34 +56,18 @@ struct BackupDetailView: View {
             .disabled(model.isDemoMode)
 
             Button {
-                model.copySelectedBackupPath()
+                model.copySelectedTrashBackupPath()
             } label: {
                 Label("Copy Path", systemImage: "doc.on.doc")
             }
             .buttonStyle(.bordered)
 
             Button {
-                model.copySelectedBackupOriginalPath()
+                model.copySelectedTrashBackupOriginalPath()
             } label: {
                 Label("Copy Original", systemImage: "arrowshape.turn.up.left")
             }
             .buttonStyle(.bordered)
-
-            Button(role: .destructive) {
-                isMoveToTrashConfirmationPresented = true
-            } label: {
-                Label("Move to Trash", systemImage: "trash")
-            }
-            .buttonStyle(.bordered)
-            .disabled(model.isDemoMode && model.selectedBackup == nil)
-        }
-        .alert("Move backup to app trash?", isPresented: $isMoveToTrashConfirmationPresented) {
-            Button("Move to Trash", role: .destructive) {
-                Task { await model.moveSelectedBackupToTrash() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This moves the selected backup into Codex Wake's app trash. It will not be permanently deleted until you empty the app trash.")
         }
     }
 

@@ -6,12 +6,14 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
     private let codexHome: URL
     private let stateDB: URL
     private let sessionIndex: URL
+    private let backupTrash: URL
 
     init(codexHome: URL? = nil) {
         let home = codexHome ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
         self.codexHome = home
         self.stateDB = home.appendingPathComponent("state_5.sqlite")
         self.sessionIndex = home.appendingPathComponent("session_index.jsonl")
+        self.backupTrash = home.appendingPathComponent(".codex-wake-trash", isDirectory: true)
     }
 
     func loadThreads() throws -> [CodexThread] {
@@ -50,19 +52,31 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
 
     func loadBackups() throws -> [BackupFile] {
         guard fileManager.fileExists(atPath: codexHome.path) else { throw WakeError.missingCodexHome(codexHome) }
+        return try scanBackups(in: codexHome, includeTrash: false)
+    }
 
+    func loadBackupTrash() throws -> [BackupFile] {
+        guard fileManager.fileExists(atPath: backupTrash.path) else { return [] }
+        return try scanBackups(in: backupTrash, includeTrash: true)
+    }
+
+    private func scanBackups(in root: URL, includeTrash: Bool) throws -> [BackupFile] {
         let marker = ".codex-rescue-backup-"
         let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
+        let options: FileManager.DirectoryEnumerationOptions = includeTrash
+            ? [.skipsPackageDescendants]
+            : [.skipsPackageDescendants, .skipsHiddenFiles]
         guard let enumerator = fileManager.enumerator(
-            at: codexHome,
+            at: root,
             includingPropertiesForKeys: keys,
-            options: [.skipsPackageDescendants]
+            options: options
         ) else {
             return []
         }
 
         var backups: [BackupFile] = []
         for case let url as URL in enumerator {
+            if !includeTrash && url.path.hasPrefix(backupTrash.path + "/") { continue }
             let fileName = url.lastPathComponent
             guard let markerRange = fileName.range(of: marker) else { continue }
 
@@ -74,7 +88,16 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
             if values?.isRegularFile == false { continue }
 
             let directoryURL = url.deletingLastPathComponent()
-            let originalURL = directoryURL.appendingPathComponent(originalName)
+            let originalDirectoryURL: URL
+            if includeTrash {
+                let relativeDirectory = String(directoryURL.path.dropFirst(backupTrash.path.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                originalDirectoryURL = relativeDirectory.isEmpty
+                    ? codexHome
+                    : codexHome.appendingPathComponent(relativeDirectory, isDirectory: true)
+            } else {
+                originalDirectoryURL = directoryURL
+            }
+            let originalURL = originalDirectoryURL.appendingPathComponent(originalName)
             backups.append(
                 BackupFile(
                     backupPath: url.path,
@@ -97,6 +120,50 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
             if lhsDate != rhsDate { return lhsDate > rhsDate }
             return lhs.backupPath.localizedCaseInsensitiveCompare(rhs.backupPath) == .orderedAscending
         }
+    }
+
+    func moveBackupToTrash(_ backup: BackupFile) throws {
+        let source = URL(fileURLWithPath: backup.backupPath).standardizedFileURL
+        guard source.path.hasPrefix(codexHome.standardizedFileURL.path + "/"),
+              source.lastPathComponent.contains(".codex-rescue-backup-")
+        else {
+            throw WakeError.commandFailed("Refusing to move non-Codex-Wake backup file")
+        }
+
+        let sourceDirectory = source.deletingLastPathComponent()
+        let relativeDirectory = String(sourceDirectory.path.dropFirst(codexHome.standardizedFileURL.path.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let destinationDirectory = relativeDirectory.isEmpty
+            ? backupTrash
+            : backupTrash.appendingPathComponent(relativeDirectory, isDirectory: true)
+        try fileManager.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+        let destination = uniqueTrashURL(for: source.lastPathComponent, in: destinationDirectory)
+        try fileManager.moveItem(at: source, to: destination)
+    }
+
+    func emptyBackupTrash() throws -> Int {
+        guard fileManager.fileExists(atPath: backupTrash.path) else { return 0 }
+        let keys: [URLResourceKey] = [.isRegularFileKey]
+        guard let enumerator = fileManager.enumerator(
+            at: backupTrash,
+            includingPropertiesForKeys: keys,
+            options: [.skipsPackageDescendants]
+        ) else {
+            return 0
+        }
+
+        var removed = 0
+        for case let url as URL in enumerator {
+            let standardized = url.standardizedFileURL
+            guard standardized.path.hasPrefix(backupTrash.standardizedFileURL.path + "/"),
+                  standardized.lastPathComponent.contains(".codex-rescue-backup-")
+            else { continue }
+
+            let values = try? standardized.resourceValues(forKeys: Set(keys))
+            guard values?.isRegularFile != false else { continue }
+            try fileManager.removeItem(at: standardized)
+            removed += 1
+        }
+        return removed
     }
 
     func loadPreview(for thread: CodexThread) throws -> ThreadPreview {
@@ -257,6 +324,20 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
             return .chatFile
         }
         return .other
+    }
+
+    private func uniqueTrashURL(for fileName: String, in directory: URL) -> URL {
+        var destination = directory.appendingPathComponent(fileName)
+        guard fileManager.fileExists(atPath: destination.path) else { return destination }
+
+        let suffix = backupStamp()
+        destination = directory.appendingPathComponent("\(fileName).trashed-\(suffix)")
+        var counter = 2
+        while fileManager.fileExists(atPath: destination.path) {
+            destination = directory.appendingPathComponent("\(fileName).trashed-\(suffix)-\(counter)")
+            counter += 1
+        }
+        return destination
     }
 
     private func text(_ statement: OpaquePointer, _ index: Int32) -> String {

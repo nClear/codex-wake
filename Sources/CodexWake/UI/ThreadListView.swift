@@ -80,6 +80,34 @@ struct ThreadListView: View {
                             commandPressed: NSEvent.modifierFlags.contains(.command)
                         )
                     }
+                    .contextMenu {
+                        Button {
+                            model.selectThread(thread)
+                            Task { await model.wakeSelectedThread() }
+                        } label: {
+                            Label("Wake", systemImage: "alarm")
+                        }
+                        .disabled(model.isDemoMode || model.isLoading || thread.archived || !thread.fileExists)
+
+                        Button {
+                            model.selectThread(thread)
+                        } label: {
+                            Label("Select", systemImage: "text.bubble")
+                        }
+
+                        Button {
+                            model.copyThreadPath(thread)
+                        } label: {
+                            Label("Copy Path", systemImage: "doc.on.doc")
+                        }
+
+                        Button {
+                            model.revealThreadInFinder(thread)
+                        } label: {
+                            Label("Reveal", systemImage: "folder")
+                        }
+                        .disabled(model.isDemoMode)
+                    }
                 }
             }
             .listStyle(.plain)

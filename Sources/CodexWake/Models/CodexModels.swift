@@ -133,6 +133,7 @@ enum ProjectSortMode: String, CaseIterable, Identifiable {
 enum AppSection {
     case chats
     case backups
+    case backupTrash
 }
 
 struct ThreadPreview: Identifiable {

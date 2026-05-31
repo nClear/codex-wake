@@ -15,6 +15,9 @@ struct ContentView: View {
             case .backups:
                 BackupListView()
                     .navigationSplitViewColumnWidth(min: 320, ideal: 390, max: 520)
+            case .backupTrash:
+                BackupTrashListView()
+                    .navigationSplitViewColumnWidth(min: 320, ideal: 390, max: 520)
             }
         } detail: {
             switch model.selectedSection {
@@ -26,6 +29,8 @@ struct ContentView: View {
                 }
             case .backups:
                 BackupDetailView()
+            case .backupTrash:
+                BackupTrashDetailView()
             }
         }
         .overlay(alignment: .bottom) {

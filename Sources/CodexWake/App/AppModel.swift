@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 final class AppModel: ObservableObject {
     private static let backupsSelectionID = "__backups__"
+    private static let backupTrashSelectionID = "__backup_trash__"
 
     @Published var isLoading = false
     @Published var status = "Ready"
@@ -27,10 +28,12 @@ final class AppModel: ObservableObject {
     }
     @Published var selectedThreadID: String?
     @Published var selectedBackupID: String?
+    @Published var selectedTrashBackupID: String?
     @Published private(set) var projects: [ProjectSummary] = [.all]
     @Published private(set) var threads: [CodexThread] = []
     @Published private(set) var filteredThreads: [CodexThread] = []
     @Published private(set) var backups: [BackupFile] = []
+    @Published private(set) var backupTrash: [BackupFile] = []
     @Published var preview: ThreadPreview?
     @Published var wakeReport: WakeReport?
     @Published var moveReport: MoveReport?
@@ -69,12 +72,24 @@ final class AppModel: ObservableObject {
         backups.first { $0.id == selectedBackupID }
     }
 
+    var selectedTrashBackup: BackupFile? {
+        backupTrash.first { $0.id == selectedTrashBackupID }
+    }
+
     var backupTotalSize: Int64 {
         backups.reduce(0) { $0 + $1.size }
     }
 
     var backupTotalSizeText: String {
         ByteCountFormatter.string(fromByteCount: backupTotalSize, countStyle: .file)
+    }
+
+    var backupTrashTotalSize: Int64 {
+        backupTrash.reduce(0) { $0 + $1.size }
+    }
+
+    var backupTrashTotalSizeText: String {
+        ByteCountFormatter.string(fromByteCount: backupTrashTotalSize, countStyle: .file)
     }
 
     var selectedWakeReport: WakeReport? {
@@ -109,16 +124,24 @@ final class AppModel: ObservableObject {
         do {
             let store = self.store
             let loaded = try await Task.detached(priority: .userInitiated) {
-                (threads: try store.loadThreads(), backups: try store.loadBackups())
+                (
+                    threads: try store.loadThreads(),
+                    backups: try store.loadBackups(),
+                    backupTrash: try store.loadBackupTrash()
+                )
             }.value
             threads = loaded.threads
             backups = loaded.backups
+            backupTrash = loaded.backupTrash
             projects = ProjectSummary.make(from: loaded.threads, sort: projectSortMode)
             if selectedThreadID == nil {
                 selectedThreadID = loaded.threads.first?.id
             }
             if selectedBackupID == nil || !loaded.backups.contains(where: { $0.id == selectedBackupID }) {
                 selectedBackupID = loaded.backups.first?.id
+            }
+            if selectedTrashBackupID == nil || !loaded.backupTrash.contains(where: { $0.id == selectedTrashBackupID }) {
+                selectedTrashBackupID = loaded.backupTrash.first?.id
             }
             selectedThreadIDs.formIntersection(Set(loaded.threads.map(\.id)))
             if selectedThreadIDs.isEmpty {
@@ -300,6 +323,14 @@ final class AppModel: ObservableObject {
         status = backups.isEmpty ? "No backups found" : "Loaded \(backups.count) backups"
     }
 
+    func showBackupTrash() {
+        clearThreadSelection()
+        selectedProjectID = Self.backupTrashSelectionID
+        selectedSection = .backupTrash
+        selectedTrashBackupID = backupTrash.first?.id
+        status = backupTrash.isEmpty ? "App trash is empty" : "Loaded \(backupTrash.count) trashed backups"
+    }
+
     func revealSelectedBackupInFinder() {
         guard !isDemoMode else {
             status = "Demo mode has no local backup file"
@@ -321,6 +352,83 @@ final class AppModel: ObservableObject {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(path, forType: .string)
         status = "Original path copied"
+    }
+
+    func revealSelectedTrashBackupInFinder() {
+        guard !isDemoMode else {
+            status = "Demo mode has no local trash file"
+            return
+        }
+        guard let url = selectedTrashBackup.map({ URL(fileURLWithPath: $0.backupPath) }) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    func copySelectedTrashBackupPath() {
+        guard let path = selectedTrashBackup?.backupPath else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(path, forType: .string)
+        status = "Trash path copied"
+    }
+
+    func copySelectedTrashBackupOriginalPath() {
+        guard let path = selectedTrashBackup?.originalPath else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(path, forType: .string)
+        status = "Original path copied"
+    }
+
+    func moveSelectedBackupToTrash() async {
+        guard let backup = selectedBackup else { return }
+        guard !isDemoMode else {
+            do {
+                try store.moveBackupToTrash(backup)
+                status = "Demo backup moved to trash"
+                await refresh()
+                selectedSection = .backupTrash
+                selectedTrashBackupID = backup.id
+            } catch {
+                errorMessage = readable(error)
+                status = "Move to trash failed"
+            }
+            return
+        }
+
+        isLoading = true
+        status = "Moving backup to trash..."
+        errorMessage = nil
+        defer { isLoading = false }
+
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                try self.store.moveBackupToTrash(backup)
+            }.value
+            status = "Backup moved to trash"
+            await refresh()
+            selectedSection = .backupTrash
+            selectedTrashBackupID = backup.id
+        } catch {
+            errorMessage = readable(error)
+            status = "Move to trash failed"
+        }
+    }
+
+    func emptyBackupTrash() async {
+        guard !backupTrash.isEmpty else { return }
+        isLoading = true
+        status = "Emptying backup trash..."
+        errorMessage = nil
+        defer { isLoading = false }
+
+        do {
+            let removed = try await Task.detached(priority: .userInitiated) {
+                try self.store.emptyBackupTrash()
+            }.value
+            status = "Deleted \(removed) backup files"
+            await refresh()
+        } catch {
+            errorMessage = readable(error)
+            status = "Empty trash failed"
+        }
     }
 
     func loadPreview(threadID: String) async {
@@ -408,6 +516,14 @@ final class AppModel: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
+    func revealThreadInFinder(_ thread: CodexThread) {
+        guard !isDemoMode else {
+            status = "Demo mode has no local file"
+            return
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([thread.rolloutURL])
+    }
+
     func copySelectedPath() {
         guard !isDemoMode else {
             status = "Demo mode has no local path"
@@ -416,6 +532,12 @@ final class AppModel: ObservableObject {
         guard let path = selectedThread?.rolloutPath else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(path, forType: .string)
+        status = "Path copied"
+    }
+
+    func copyThreadPath(_ thread: CodexThread) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(thread.rolloutPath, forType: .string)
         status = "Path copied"
     }
 
