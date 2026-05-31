@@ -49,7 +49,7 @@ struct CodexThread: Identifiable, Hashable {
     }
 
     var isRecentlyUpdated: Bool {
-        Date().timeIntervalSince(updatedAt) < 8 * 24 * 60 * 60
+        Date().timeIntervalSince(updatedAt) < 7 * 24 * 60 * 60
     }
 
     var statusLabel: String {

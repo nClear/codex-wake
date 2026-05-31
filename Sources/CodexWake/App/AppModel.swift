@@ -32,6 +32,16 @@ final class AppModel: ObservableObject {
         threads.first { $0.id == selectedThreadID }
     }
 
+    var selectedWakeReport: WakeReport? {
+        guard wakeReport?.threadID == selectedThreadID else { return nil }
+        return wakeReport
+    }
+
+    var selectedMoveReport: MoveReport? {
+        guard moveReport?.threadID == selectedThreadID else { return nil }
+        return moveReport
+    }
+
     var moveTargetProjects: [ProjectSummary] {
         guard let thread = selectedThread else { return [] }
         return projects.filter { project in
@@ -109,12 +119,15 @@ final class AppModel: ObservableObject {
         defer { isLoading = false }
 
         do {
+            let wokenThreadID = thread.id
             let report = try await Task.detached(priority: .userInitiated) {
                 try self.store.wake(thread: thread)
             }.value
             wakeReport = report
             status = "Awake: \(thread.shortTitle)"
             await refresh()
+            selectedThreadID = wokenThreadID
+            await loadPreview(threadID: wokenThreadID)
         } catch {
             errorMessage = readable(error)
             status = "Wake failed"

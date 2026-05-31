@@ -106,9 +106,9 @@ struct ThreadDetailView: View {
 
     @ViewBuilder
     private var wakeReport: some View {
-        if let report = model.wakeReport {
+        if let report = model.selectedWakeReport {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Wake complete")
+                Text("Wake complete @ \(WakeDates.displayBackupStamp(report.timestamp))")
                     .font(.headline)
                 Text("Backups")
                     .font(.caption.weight(.semibold))
@@ -124,7 +124,7 @@ struct ThreadDetailView: View {
 
     @ViewBuilder
     private var moveReport: some View {
-        if let report = model.moveReport {
+        if let report = model.selectedMoveReport {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Move complete")
                     .font(.headline)

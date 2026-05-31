@@ -46,6 +46,11 @@ enum WakeDates {
         return shortDateFormatter.string(from: date)
     }
 
+    static func displayBackupStamp(_ stamp: String) -> String {
+        guard let date = backupStampFormatter.date(from: stamp) else { return stamp }
+        return displayFormatter.string(from: date)
+    }
+
     private static let isoBase: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
@@ -78,6 +83,13 @@ enum WakeDates {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
         formatter.timeStyle = .none
+        return formatter
+    }()
+
+    private static let backupStampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
         return formatter
     }()
 }
