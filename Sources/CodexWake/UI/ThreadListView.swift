@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ThreadListView: View {
@@ -55,60 +56,142 @@ struct ThreadListView: View {
 
                     Spacer()
                 }
+
+                if model.isSelectingThreads {
+                    ThreadSelectionToolbar()
+                }
             }
             .padding(12)
 
             Divider()
 
-            List(selection: $model.selectedThreadID) {
+            List {
                 ForEach(model.filteredThreads) { thread in
-                    ThreadRow(thread: thread)
-                        .tag(thread.id)
-                        .onTapGesture { model.selectThread(thread) }
+                    ThreadRow(
+                        thread: thread,
+                        isSelecting: model.isSelectingThreads,
+                        isSelected: model.selectedThreadIDs.contains(thread.id),
+                        isPrimary: model.selectedThreadID == thread.id
+                    ) {
+                        model.toggleThreadSelection(thread)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        model.handleThreadClick(
+                            thread,
+                            commandPressed: NSEvent.modifierFlags.contains(.command)
+                        )
+                    }
                 }
             }
             .listStyle(.plain)
         }
         .onChange(of: model.selectedThreadID) { _, newValue in
+            guard !model.isSelectingThreads else { return }
             guard let id = newValue, let thread = model.filteredThreads.first(where: { $0.id == id }) else { return }
             model.selectThread(thread)
         }
     }
 }
 
-private struct ThreadRow: View {
-    let thread: CodexThread
+private struct ThreadSelectionToolbar: View {
+    @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(thread.shortTitle)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(2)
-                Spacer()
-                Text(WakeDates.shortDate(thread.createdAt))
+        HStack(spacing: 8) {
+            Text("\(model.selectedThreadIDs.count) selected")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Spacer()
+
+            Button {
+                model.copySelectedThreadPaths()
+            } label: {
+                Label("Copy Paths", systemImage: "doc.on.doc")
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.selectedThreadIDs.isEmpty)
+
+            Button {
+                model.revealSelectedThreadsInFinder()
+            } label: {
+                Label("Reveal", systemImage: "folder")
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.isDemoMode || model.selectedThreadIDs.isEmpty)
+
+            Button {
+                model.cancelThreadSelection()
+            } label: {
+                Label("Cancel", systemImage: "xmark")
+            }
+            .buttonStyle(.bordered)
+            .keyboardShortcut(.cancelAction)
+        }
+        .padding(8)
+        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct ThreadRow: View {
+    let thread: CodexThread
+    let isSelecting: Bool
+    let isSelected: Bool
+    let isPrimary: Bool
+    let onToggleSelection: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            if isSelecting {
+                Button {
+                    onToggleSelection()
+                } label: {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help(isSelected ? "Remove from selection" : "Add to selection")
+                .padding(.top, 2)
+            }
+
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(thread.shortTitle)
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(2)
+                    Spacer()
+                    Text(WakeDates.shortDate(thread.createdAt))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    StatusPill(text: thread.statusLabel, thread: thread)
+                }
+
+                Text(thread.cwd)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                StatusPill(text: thread.statusLabel, thread: thread)
-            }
+                    .lineLimit(1)
 
-            Text(thread.cwd)
+                HStack(spacing: 8) {
+                    Label(WakeDates.display(thread.updatedAt), systemImage: "clock")
+                    if thread.sessionIndexUpdatedAt == nil {
+                        Label("no index", systemImage: "exclamationmark.triangle")
+                    }
+                    Spacer()
+                }
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
-
-            HStack(spacing: 8) {
-                Label(WakeDates.display(thread.updatedAt), systemImage: "clock")
-                if thread.sessionIndexUpdatedAt == nil {
-                    Label("no index", systemImage: "exclamationmark.triangle")
-                }
-                Spacer()
             }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 6)
+        .background(rowBackground, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var rowBackground: Color {
+        if isSelected { return Color.accentColor.opacity(0.12) }
+        if isPrimary { return Color.primary.opacity(0.05) }
+        return .clear
     }
 }
 

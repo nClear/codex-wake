@@ -19,7 +19,11 @@ struct ContentView: View {
         } detail: {
             switch model.selectedSection {
             case .chats:
-                ThreadDetailView()
+                if model.isSelectingThreads {
+                    ThreadSelectionDetailView()
+                } else {
+                    ThreadDetailView()
+                }
             case .backups:
                 BackupDetailView()
             }

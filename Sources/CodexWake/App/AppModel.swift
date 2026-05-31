@@ -14,11 +14,14 @@ final class AppModel: ObservableObject {
     @Published var isDeepSearching = false
     @Published var selectedProjectID = ProjectSummary.allID {
         didSet {
+            clearThreadSelection()
             selectedSection = .chats
             applyFilters()
         }
     }
     @Published var selectedSection: AppSection = .chats
+    @Published var isSelectingThreads = false
+    @Published var selectedThreadIDs = Set<String>()
     @Published var projectSortMode: ProjectSortMode = .recent {
         didSet { projects = ProjectSummary.make(from: threads, sort: projectSortMode) }
     }
@@ -38,6 +41,15 @@ final class AppModel: ObservableObject {
 
     var selectedThread: CodexThread? {
         threads.first { $0.id == selectedThreadID }
+    }
+
+    var selectedThreads: [CodexThread] {
+        threads
+            .filter { selectedThreadIDs.contains($0.id) }
+            .sorted { lhs, rhs in
+                if lhs.updatedAt != rhs.updatedAt { return lhs.updatedAt > rhs.updatedAt }
+                return lhs.shortTitle.localizedCaseInsensitiveCompare(rhs.shortTitle) == .orderedAscending
+            }
     }
 
     var selectedBackup: BackupFile? {
@@ -95,6 +107,10 @@ final class AppModel: ObservableObject {
             if selectedBackupID == nil || !loaded.backups.contains(where: { $0.id == selectedBackupID }) {
                 selectedBackupID = loaded.backups.first?.id
             }
+            selectedThreadIDs.formIntersection(Set(loaded.threads.map(\.id)))
+            if selectedThreadIDs.isEmpty {
+                isSelectingThreads = false
+            }
             applyFilters()
             preview = nil
             status = isDemoMode ? "Loaded \(loaded.threads.count) demo chats" : "Loaded \(loaded.threads.count) chats"
@@ -105,11 +121,75 @@ final class AppModel: ObservableObject {
     }
 
     func selectThread(_ thread: CodexThread) {
+        selectedSection = .chats
+        clearThreadSelection()
         selectedThreadID = thread.id
         Task { await loadPreview(threadID: thread.id) }
     }
 
+    func handleThreadClick(_ thread: CodexThread, commandPressed: Bool) {
+        selectedSection = .chats
+        if commandPressed {
+            toggleThreadSelection(thread)
+            return
+        }
+
+        if isSelectingThreads {
+            selectedThreadID = thread.id
+            return
+        }
+
+        selectThread(thread)
+    }
+
+    func toggleThreadSelection(_ thread: CodexThread) {
+        selectedSection = .chats
+        if !isSelectingThreads {
+            isSelectingThreads = true
+            selectedThreadIDs.removeAll()
+            if let selectedThreadID {
+                selectedThreadIDs.insert(selectedThreadID)
+            }
+        }
+
+        if selectedThreadIDs.contains(thread.id) {
+            selectedThreadIDs.remove(thread.id)
+        } else {
+            selectedThreadIDs.insert(thread.id)
+        }
+
+        selectedThreadID = thread.id
+        preview = nil
+        status = "\(selectedThreadIDs.count) chats selected"
+    }
+
+    func cancelThreadSelection() {
+        clearThreadSelection()
+        if let selectedThreadID {
+            Task { await loadPreview(threadID: selectedThreadID) }
+        }
+    }
+
+    func revealSelectedThreadsInFinder() {
+        guard !isDemoMode else {
+            status = "Demo mode has no local files"
+            return
+        }
+        let urls = selectedThreads.map(\.rolloutURL)
+        guard !urls.isEmpty else { return }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
+
+    func copySelectedThreadPaths() {
+        let paths = selectedThreads.map(\.rolloutPath)
+        guard !paths.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(paths.joined(separator: "\n"), forType: .string)
+        status = "Copied \(paths.count) paths"
+    }
+
     func showBackups() {
+        clearThreadSelection()
         selectedProjectID = Self.backupsSelectionID
         selectedSection = .backups
         selectedBackupID = backups.first?.id
@@ -316,6 +396,11 @@ final class AppModel: ObservableObject {
         guard !filteredThreads.contains(where: { $0.id == selectedThreadID }) else { return }
         selectedThreadID = filteredThreads.first?.id
         preview = nil
+    }
+
+    private func clearThreadSelection() {
+        isSelectingThreads = false
+        selectedThreadIDs.removeAll()
     }
 
     private func readable(_ error: Error) -> String {
