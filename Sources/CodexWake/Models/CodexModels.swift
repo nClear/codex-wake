@@ -167,6 +167,43 @@ struct MoveReport: Identifiable {
     let changedFiles: [String]
 }
 
+struct BatchWakeReport: Identifiable {
+    let id = UUID()
+    let completedAt: Date
+    let requestedCount: Int
+    let succeeded: [BatchWakeSuccess]
+    let skipped: [BatchWakeSkipped]
+    let failed: [BatchWakeFailure]
+
+    var backupCount: Int {
+        succeeded.reduce(0) { $0 + $1.backupCount }
+    }
+}
+
+struct BatchWakeSuccess: Identifiable, Hashable {
+    let threadID: String
+    let title: String
+    let backupCount: Int
+
+    var id: String { threadID }
+}
+
+struct BatchWakeSkipped: Identifiable, Hashable {
+    let threadID: String
+    let title: String
+    let reason: String
+
+    var id: String { threadID }
+}
+
+struct BatchWakeFailure: Identifiable, Hashable {
+    let threadID: String
+    let title: String
+    let message: String
+
+    var id: String { threadID }
+}
+
 struct BackupFile: Identifiable, Hashable {
     var id: String { backupPath }
 

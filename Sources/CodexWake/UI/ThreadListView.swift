@@ -31,11 +31,6 @@ struct ThreadListView: View {
                         .buttonStyle(.plain)
                         .help("Clear search")
                     }
-                }
-                .padding(8)
-                .background(Color(NSColor.textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-
-                HStack(spacing: 8) {
                     Button {
                         model.runDeepSearch()
                     } label: {
@@ -43,22 +38,25 @@ struct ThreadListView: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled(model.isDeepSearching || model.searchText.trimmingCharacters(in: .whitespacesAndNewlines).count < 3)
-                    .help("Search inside JSONL chat files")
+                    .help("Deep search inside JSONL chat files")
 
                     if model.isDeepSearching {
                         Button {
                             model.cancelDeepSearch()
                         } label: {
-                            Label("Cancel", systemImage: "xmark")
+                            Image(systemName: "xmark")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.plain)
+                        .help("Cancel deep search")
                     }
-
-                    Spacer()
                 }
+                .padding(8)
+                .background(Color(NSColor.textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
 
                 if model.isSelectingThreads {
                     ThreadSelectionToolbar()
+                } else {
+                    ThreadSelectionEntryToolbar()
                 }
             }
             .padding(12)
@@ -91,11 +89,43 @@ struct ThreadListView: View {
             guard let id = newValue, let thread = model.filteredThreads.first(where: { $0.id == id }) else { return }
             model.selectThread(thread)
         }
+        .alert(
+            "Wake complete",
+            isPresented: Binding(
+                get: { model.batchWakeSuccessMessage != nil },
+                set: { if !$0 { model.batchWakeSuccessMessage = nil } }
+            )
+        ) {
+            Button("OK") {
+                model.batchWakeSuccessMessage = nil
+            }
+        } message: {
+            Text(model.batchWakeSuccessMessage ?? "")
+        }
+    }
+}
+
+private struct ThreadSelectionEntryToolbar: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button {
+                model.startThreadSelection()
+            } label: {
+                Label("Multi-select chats", systemImage: "checklist")
+            }
+            .buttonStyle(.bordered)
+
+            Spacer()
+        }
+        .frame(height: 36)
     }
 }
 
 private struct ThreadSelectionToolbar: View {
     @EnvironmentObject private var model: AppModel
+    @State private var isWakeConfirmationPresented = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -104,6 +134,15 @@ private struct ThreadSelectionToolbar: View {
                 .foregroundStyle(.secondary)
 
             Spacer()
+
+            Button {
+                isWakeConfirmationPresented = true
+            } label: {
+                Label("Wake", systemImage: "alarm")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(model.isDemoMode || model.isLoading || model.selectedWakeableCount == 0)
+            .help("Wake selected chats")
 
             Button {
                 model.copySelectedThreadPaths()
@@ -130,7 +169,16 @@ private struct ThreadSelectionToolbar: View {
             .keyboardShortcut(.cancelAction)
         }
         .padding(8)
+        .frame(height: 36)
         .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .alert("Wake \(model.selectedWakeableCount) selected chats?", isPresented: $isWakeConfirmationPresented) {
+            Button("Wake") {
+                Task { await model.wakeSelectedThreads() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Codex Wake will run the same single-chat Wake operation for each writable selected chat and create backups for each operation. \(model.selectedWakeSkippedCount) archived or missing chats will be skipped.")
+        }
     }
 }
 

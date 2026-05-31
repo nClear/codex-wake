@@ -34,6 +34,7 @@ final class AppModel: ObservableObject {
     @Published var preview: ThreadPreview?
     @Published var wakeReport: WakeReport?
     @Published var moveReport: MoveReport?
+    @Published var batchWakeSuccessMessage: String?
     @Published private(set) var isDemoMode: Bool
 
     private let store: any ThreadStore
@@ -50,6 +51,18 @@ final class AppModel: ObservableObject {
                 if lhs.updatedAt != rhs.updatedAt { return lhs.updatedAt > rhs.updatedAt }
                 return lhs.shortTitle.localizedCaseInsensitiveCompare(rhs.shortTitle) == .orderedAscending
             }
+    }
+
+    var wakeableSelectedThreads: [CodexThread] {
+        selectedThreads.filter { !$0.archived && $0.fileExists }
+    }
+
+    var selectedWakeableCount: Int {
+        wakeableSelectedThreads.count
+    }
+
+    var selectedWakeSkippedCount: Int {
+        selectedThreads.count - wakeableSelectedThreads.count
     }
 
     var selectedBackup: BackupFile? {
@@ -142,6 +155,15 @@ final class AppModel: ObservableObject {
         selectThread(thread)
     }
 
+    func startThreadSelection() {
+        selectedSection = .chats
+        isSelectingThreads = true
+        selectedThreadIDs.removeAll()
+        batchWakeSuccessMessage = nil
+        preview = nil
+        status = "Select chats"
+    }
+
     func toggleThreadSelection(_ thread: CodexThread) {
         selectedSection = .chats
         if !isSelectingThreads {
@@ -159,6 +181,7 @@ final class AppModel: ObservableObject {
         }
 
         selectedThreadID = thread.id
+        batchWakeSuccessMessage = nil
         preview = nil
         status = "\(selectedThreadIDs.count) chats selected"
     }
@@ -186,6 +209,87 @@ final class AppModel: ObservableObject {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(paths.joined(separator: "\n"), forType: .string)
         status = "Copied \(paths.count) paths"
+    }
+
+    func wakeSelectedThreads() async {
+        guard !isDemoMode else {
+            status = "Demo mode does not change local Codex files"
+            return
+        }
+
+        let selected = selectedThreads
+        guard !selected.isEmpty else { return }
+
+        let skipped = selected.compactMap { thread -> BatchWakeSkipped? in
+            if thread.archived {
+                return BatchWakeSkipped(threadID: thread.id, title: thread.shortTitle, reason: "Archived")
+            }
+            if !thread.fileExists {
+                return BatchWakeSkipped(threadID: thread.id, title: thread.shortTitle, reason: "Missing file")
+            }
+            return nil
+        }
+        let candidates = selected.filter { !$0.archived && $0.fileExists }
+
+        guard !candidates.isEmpty else {
+            batchWakeSuccessMessage = "No selected chats can be woken. Skipped \(skipped.count)."
+            status = "No selected chats can be woken"
+            clearThreadSelection()
+            return
+        }
+
+        isLoading = true
+        status = "Waking \(candidates.count) selected chats..."
+        errorMessage = nil
+        wakeReport = nil
+        moveReport = nil
+        batchWakeSuccessMessage = nil
+        let firstSelectedID = selected.first?.id
+        defer { isLoading = false }
+
+        let store = self.store
+        let report = await Task.detached(priority: .userInitiated) {
+            var succeeded: [BatchWakeSuccess] = []
+            var failed: [BatchWakeFailure] = []
+
+            for thread in candidates {
+                do {
+                    let report = try store.wake(thread: thread)
+                    succeeded.append(
+                        BatchWakeSuccess(
+                            threadID: thread.id,
+                            title: thread.shortTitle,
+                            backupCount: report.backups.count
+                        )
+                    )
+                } catch {
+                    failed.append(
+                        BatchWakeFailure(
+                            threadID: thread.id,
+                            title: thread.shortTitle,
+                            message: AppModel.readableMessage(error)
+                        )
+                    )
+                }
+            }
+
+            return BatchWakeReport(
+                completedAt: Date(),
+                requestedCount: selected.count,
+                succeeded: succeeded,
+                skipped: skipped,
+                failed: failed
+            )
+        }.value
+
+        batchWakeSuccessMessage = "Woke \(report.succeeded.count) chats. Skipped \(report.skipped.count), failed \(report.failed.count)."
+        status = "Batch wake complete: \(report.succeeded.count) ok, \(report.failed.count) failed"
+        await refresh()
+        selectedThreadID = firstSelectedID
+        clearThreadSelection()
+        if let selectedThreadID {
+            await loadPreview(threadID: selectedThreadID)
+        }
     }
 
     func showBackups() {
@@ -415,5 +519,13 @@ final class AppModel: ObservableObject {
         let args = ProcessInfo.processInfo.arguments
         let env = ProcessInfo.processInfo.environment
         return args.contains("--demo") || env["CODEX_WAKE_DEMO"] == "1"
+    }
+
+    private nonisolated static func readableMessage(_ error: Error) -> String {
+        if let localized = error as? LocalizedError,
+           let description = localized.errorDescription {
+            return description
+        }
+        return error.localizedDescription
     }
 }
