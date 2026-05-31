@@ -3,6 +3,8 @@ import SwiftUI
 
 @MainActor
 final class AppModel: ObservableObject {
+    private static let backupsSelectionID = "__backups__"
+
     @Published var isLoading = false
     @Published var status = "Ready"
     @Published var errorMessage: String?
@@ -11,15 +13,21 @@ final class AppModel: ObservableObject {
     }
     @Published var isDeepSearching = false
     @Published var selectedProjectID = ProjectSummary.allID {
-        didSet { applyFilters() }
+        didSet {
+            selectedSection = .chats
+            applyFilters()
+        }
     }
+    @Published var selectedSection: AppSection = .chats
     @Published var projectSortMode: ProjectSortMode = .recent {
         didSet { projects = ProjectSummary.make(from: threads, sort: projectSortMode) }
     }
     @Published var selectedThreadID: String?
+    @Published var selectedBackupID: String?
     @Published private(set) var projects: [ProjectSummary] = [.all]
     @Published private(set) var threads: [CodexThread] = []
     @Published private(set) var filteredThreads: [CodexThread] = []
+    @Published private(set) var backups: [BackupFile] = []
     @Published var preview: ThreadPreview?
     @Published var wakeReport: WakeReport?
     @Published var moveReport: MoveReport?
@@ -30,6 +38,18 @@ final class AppModel: ObservableObject {
 
     var selectedThread: CodexThread? {
         threads.first { $0.id == selectedThreadID }
+    }
+
+    var selectedBackup: BackupFile? {
+        backups.first { $0.id == selectedBackupID }
+    }
+
+    var backupTotalSize: Int64 {
+        backups.reduce(0) { $0 + $1.size }
+    }
+
+    var backupTotalSizeText: String {
+        ByteCountFormatter.string(fromByteCount: backupTotalSize, countStyle: .file)
     }
 
     var selectedWakeReport: WakeReport? {
@@ -64,16 +84,20 @@ final class AppModel: ObservableObject {
         do {
             let store = self.store
             let loaded = try await Task.detached(priority: .userInitiated) {
-                try store.loadThreads()
+                (threads: try store.loadThreads(), backups: try store.loadBackups())
             }.value
-            threads = loaded
-            projects = ProjectSummary.make(from: loaded, sort: projectSortMode)
+            threads = loaded.threads
+            backups = loaded.backups
+            projects = ProjectSummary.make(from: loaded.threads, sort: projectSortMode)
             if selectedThreadID == nil {
-                selectedThreadID = loaded.first?.id
+                selectedThreadID = loaded.threads.first?.id
+            }
+            if selectedBackupID == nil || !loaded.backups.contains(where: { $0.id == selectedBackupID }) {
+                selectedBackupID = loaded.backups.first?.id
             }
             applyFilters()
             preview = nil
-            status = isDemoMode ? "Loaded \(loaded.count) demo chats" : "Loaded \(loaded.count) chats"
+            status = isDemoMode ? "Loaded \(loaded.threads.count) demo chats" : "Loaded \(loaded.threads.count) chats"
         } catch {
             errorMessage = readable(error)
             status = "Error"
@@ -83,6 +107,36 @@ final class AppModel: ObservableObject {
     func selectThread(_ thread: CodexThread) {
         selectedThreadID = thread.id
         Task { await loadPreview(threadID: thread.id) }
+    }
+
+    func showBackups() {
+        selectedProjectID = Self.backupsSelectionID
+        selectedSection = .backups
+        selectedBackupID = backups.first?.id
+        status = backups.isEmpty ? "No backups found" : "Loaded \(backups.count) backups"
+    }
+
+    func revealSelectedBackupInFinder() {
+        guard !isDemoMode else {
+            status = "Demo mode has no local backup file"
+            return
+        }
+        guard let url = selectedBackup.map({ URL(fileURLWithPath: $0.backupPath) }) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    func copySelectedBackupPath() {
+        guard let path = selectedBackup?.backupPath else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(path, forType: .string)
+        status = "Backup path copied"
+    }
+
+    func copySelectedBackupOriginalPath() {
+        guard let path = selectedBackup?.originalPath else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(path, forType: .string)
+        status = "Original path copied"
     }
 
     func loadPreview(threadID: String) async {

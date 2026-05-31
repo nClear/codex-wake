@@ -8,10 +8,21 @@ struct ContentView: View {
             ProjectSidebarView()
                 .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 340)
         } content: {
-            ThreadListView()
-                .navigationSplitViewColumnWidth(min: 320, ideal: 390, max: 520)
+            switch model.selectedSection {
+            case .chats:
+                ThreadListView()
+                    .navigationSplitViewColumnWidth(min: 320, ideal: 390, max: 520)
+            case .backups:
+                BackupListView()
+                    .navigationSplitViewColumnWidth(min: 320, ideal: 390, max: 520)
+            }
         } detail: {
-            ThreadDetailView()
+            switch model.selectedSection {
+            case .chats:
+                ThreadDetailView()
+            case .backups:
+                BackupDetailView()
+            }
         }
         .overlay(alignment: .bottom) {
             if model.isLoading {

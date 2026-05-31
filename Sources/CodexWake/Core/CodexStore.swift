@@ -48,6 +48,57 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
         .sorted { $0.updatedAt > $1.updatedAt }
     }
 
+    func loadBackups() throws -> [BackupFile] {
+        guard fileManager.fileExists(atPath: codexHome.path) else { throw WakeError.missingCodexHome(codexHome) }
+
+        let marker = ".codex-rescue-backup-"
+        let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
+        guard let enumerator = fileManager.enumerator(
+            at: codexHome,
+            includingPropertiesForKeys: keys,
+            options: [.skipsPackageDescendants]
+        ) else {
+            return []
+        }
+
+        var backups: [BackupFile] = []
+        for case let url as URL in enumerator {
+            let fileName = url.lastPathComponent
+            guard let markerRange = fileName.range(of: marker) else { continue }
+
+            let originalName = String(fileName[..<markerRange.lowerBound])
+            let stamp = String(fileName[markerRange.upperBound...])
+            guard !originalName.isEmpty, !stamp.isEmpty else { continue }
+
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            if values?.isRegularFile == false { continue }
+
+            let directoryURL = url.deletingLastPathComponent()
+            let originalURL = directoryURL.appendingPathComponent(originalName)
+            backups.append(
+                BackupFile(
+                    backupPath: url.path,
+                    originalPath: originalURL.path,
+                    originalName: originalName,
+                    directory: directoryURL.path,
+                    stamp: stamp,
+                    createdAt: WakeDates.dateFromBackupStamp(stamp),
+                    modifiedAt: values?.contentModificationDate,
+                    size: Int64(values?.fileSize ?? 0),
+                    kind: backupKind(for: originalName),
+                    originalExists: fileManager.fileExists(atPath: originalURL.path)
+                )
+            )
+        }
+
+        return backups.sorted { lhs, rhs in
+            let lhsDate = lhs.createdAt ?? lhs.modifiedAt ?? .distantPast
+            let rhsDate = rhs.createdAt ?? rhs.modifiedAt ?? .distantPast
+            if lhsDate != rhsDate { return lhsDate > rhsDate }
+            return lhs.backupPath.localizedCaseInsensitiveCompare(rhs.backupPath) == .orderedAscending
+        }
+    }
+
     func loadPreview(for thread: CodexThread) throws -> ThreadPreview {
         guard fileManager.fileExists(atPath: thread.rolloutPath) else {
             throw WakeError.missingThreadFile(thread.rolloutPath)
@@ -193,6 +244,19 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
             )
         }
         return rows
+    }
+
+    private func backupKind(for originalName: String) -> BackupKind {
+        if originalName == "state_5.sqlite" || originalName.hasPrefix("state_5.sqlite-") {
+            return .stateDatabase
+        }
+        if originalName == "session_index.jsonl" {
+            return .sessionIndex
+        }
+        if originalName.hasSuffix(".jsonl") {
+            return .chatFile
+        }
+        return .other
     }
 
     private func text(_ statement: OpaquePointer, _ index: Int32) -> String {

@@ -57,6 +57,35 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
         .sorted { $0.updatedAt > $1.updatedAt }
     }
 
+    func loadBackups() throws -> [BackupFile] {
+        let samples: [(String, BackupKind, Int64, Int)] = [
+            ("state_5.sqlite", .stateDatabase, 2_400_000, 1),
+            ("state_5.sqlite-wal", .stateDatabase, 180_000, 1),
+            ("session_index.jsonl", .sessionIndex, 96_000, 1),
+            ("rollout-2026-05-25T17-00-00-demo-thread-001.jsonl", .chatFile, 740_000, 1),
+            ("rollout-2026-05-24T11-30-00-demo-thread-004.jsonl", .chatFile, 510_000, 9)
+        ]
+
+        return samples.map { originalName, kind, size, hoursAgo in
+            let date = baseDate.addingTimeInterval(-Double(hoursAgo) * 60 * 60)
+            let stamp = demoBackupStamp(date)
+            let directory = kind == .chatFile ? "/Users/demo/.codex/sessions/2026/05/25" : "/Users/demo/.codex"
+            let originalPath = "\(directory)/\(originalName)"
+            return BackupFile(
+                backupPath: "\(originalPath).codex-rescue-backup-\(stamp)",
+                originalPath: originalPath,
+                originalName: originalName,
+                directory: directory,
+                stamp: stamp,
+                createdAt: date,
+                modifiedAt: date,
+                size: size,
+                kind: kind,
+                originalExists: true
+            )
+        }
+    }
+
     func loadPreview(for thread: CodexThread) throws -> ThreadPreview {
         let messages = [
             PreviewMessage(
@@ -123,6 +152,13 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return movedProjects
+    }
+
+    private func demoBackupStamp(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter.string(from: date)
     }
 }
 

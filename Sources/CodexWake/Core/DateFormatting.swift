@@ -47,8 +47,12 @@ enum WakeDates {
     }
 
     static func displayBackupStamp(_ stamp: String) -> String {
-        guard let date = backupStampFormatter.date(from: stamp) else { return stamp }
+        guard let date = dateFromBackupStamp(stamp) else { return stamp }
         return displayFormatter.string(from: date)
+    }
+
+    static func dateFromBackupStamp(_ stamp: String) -> Date? {
+        backupStampFormatter.date(from: stamp)
     }
 
     private static let isoBase: ISO8601DateFormatter = {

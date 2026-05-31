@@ -31,6 +31,20 @@ struct ProjectSidebarView: View {
 
             Divider()
 
+            Button {
+                model.showBackups()
+            } label: {
+                BackupSidebarRow(
+                    count: model.backups.count,
+                    totalSize: model.backupTotalSizeText,
+                    isSelected: model.selectedSection == .backups
+                )
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .help("View Codex Wake backup files")
+
             List(selection: $model.selectedProjectID) {
                 ForEach(model.projects) { project in
                     ProjectRow(project: project)
@@ -40,6 +54,41 @@ struct ProjectSidebarView: View {
             .listStyle(.sidebar)
         }
         .background(Color(white: 0.94))
+    }
+}
+
+private struct BackupSidebarRow: View {
+    let count: Int
+    let totalSize: String
+    let isSelected: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Image(systemName: "archivebox")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+                Text("Backups")
+                    .font(.system(size: 15, weight: .semibold))
+                Spacer()
+                Text("\(count)")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+            HStack(spacing: 6) {
+                Image(systemName: "internaldrive")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+                Text(totalSize)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 7)
+        .padding(.horizontal, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .background(isSelected ? Color.accentColor.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

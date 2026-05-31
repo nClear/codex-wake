@@ -130,6 +130,11 @@ enum ProjectSortMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum AppSection {
+    case chats
+    case backups
+}
+
 struct ThreadPreview: Identifiable {
     var id: String { threadID }
     let threadID: String
@@ -160,6 +165,46 @@ struct MoveReport: Identifiable {
     let timestamp: String
     let backups: [String]
     let changedFiles: [String]
+}
+
+struct BackupFile: Identifiable, Hashable {
+    var id: String { backupPath }
+
+    let backupPath: String
+    let originalPath: String
+    let originalName: String
+    let directory: String
+    let stamp: String
+    let createdAt: Date?
+    let modifiedAt: Date?
+    let size: Int64
+    let kind: BackupKind
+    let originalExists: Bool
+}
+
+enum BackupKind: String, Hashable {
+    case stateDatabase
+    case sessionIndex
+    case chatFile
+    case other
+
+    var label: String {
+        switch self {
+        case .stateDatabase: return "State DB"
+        case .sessionIndex: return "Session index"
+        case .chatFile: return "Chat file"
+        case .other: return "Other"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .stateDatabase: return "cylinder.split.1x2"
+        case .sessionIndex: return "list.bullet.rectangle"
+        case .chatFile: return "text.bubble"
+        case .other: return "doc"
+        }
+    }
 }
 
 extension String {
