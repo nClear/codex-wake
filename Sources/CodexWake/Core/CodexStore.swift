@@ -21,6 +21,7 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
         let index = try loadSessionIndex()
         let rows = try loadThreadRows()
         return rows.map { row in
+            let indexEntry = index[row.id]
             return CodexThread(
                 id: row.id,
                 rolloutPath: row.rollout_path,
@@ -33,10 +34,12 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
                 hasUserEvent: (row.has_user_event ?? 0) != 0,
                 archived: (row.archived ?? 0) != 0,
                 title: row.title,
+                sessionIndexTitle: indexEntry?.thread_name ?? "",
                 firstUserMessage: row.first_user_message ?? "",
                 preview: row.preview ?? "",
                 cwd: row.cwd,
-                sessionIndexUpdatedAt: WakeDates.parseISO(index[row.id]?.updated_at),
+                isInSessionIndex: indexEntry != nil,
+                sessionIndexUpdatedAt: WakeDates.parseISO(indexEntry?.updated_at),
                 sessionMetaTimestamp: nil,
                 sessionPayloadTimestamp: nil,
                 fileExists: fileManager.fileExists(atPath: row.rollout_path)

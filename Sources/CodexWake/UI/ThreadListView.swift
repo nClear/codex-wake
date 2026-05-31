@@ -123,11 +123,28 @@ private struct StatusPill: View {
             .padding(.vertical, 3)
             .background(color.opacity(0.16), in: Capsule())
             .foregroundStyle(color)
+            .help(helpText)
     }
 
     private var color: Color {
         if thread.archived || !thread.fileExists { return .red }
         if thread.needsWake { return .orange }
         return .green
+    }
+
+    private var helpText: String {
+        if thread.archived {
+            return "This thread is archived."
+        }
+        if !thread.fileExists {
+            return "The chat file referenced by Codex metadata is missing on disk."
+        }
+        if !thread.isInSessionIndex {
+            return "This thread is missing from session_index.jsonl. Wake updates Codex metadata so it can appear in the sidebar again."
+        }
+        if thread.needsWake {
+            return "Codex may hide this thread from the sidebar because its latest message is older than one week. Wake updates its timestamp."
+        }
+        return "This thread is recent and present in Codex's session index."
     }
 }

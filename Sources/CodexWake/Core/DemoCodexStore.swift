@@ -43,9 +43,11 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
                 hasUserEvent: true,
                 archived: false,
                 title: row.0,
+                sessionIndexTitle: row.0,
                 firstUserMessage: row.1,
                 preview: samplePreview(title: row.0),
                 cwd: cwd,
+                isInSessionIndex: !row.4,
                 sessionIndexUpdatedAt: row.4 ? nil : updatedAt,
                 sessionMetaTimestamp: updatedAt,
                 sessionPayloadTimestamp: updatedAt,
@@ -83,7 +85,7 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
 
     func threadContainsRawText(_ thread: CodexThread, query: String) throws -> Bool {
         let q = query.lowercased()
-        return [thread.title, thread.firstUserMessage, thread.preview, thread.cwd]
+        return [thread.sessionIndexTitle, thread.title, thread.firstUserMessage, thread.preview, thread.cwd]
             .joined(separator: "\n")
             .lowercased()
             .contains(q)
