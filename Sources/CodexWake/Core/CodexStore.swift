@@ -261,13 +261,14 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
 
         if let type = payload["type"] as? String, type == "message" {
             let role = payload["role"] as? String ?? "message"
-            let text = extractContentText(payload["content"])
+            let text = cleanPreviewText(extractContentText(payload["content"]))
             if !text.isEmpty { return PreviewMessage(role: role, text: text.prefixString(1200), timestamp: timestamp) }
         }
 
         if let type = obj["type"] as? String, type == "user_message",
            let text = payload["message"] as? String {
-            return PreviewMessage(role: "user", text: text.prefixString(1200), timestamp: timestamp)
+            let cleanedText = cleanPreviewText(text)
+            if !cleanedText.isEmpty { return PreviewMessage(role: "user", text: cleanedText.prefixString(1200), timestamp: timestamp) }
         }
 
         return nil
@@ -281,6 +282,22 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
             if let text = item["content"] as? String { return text }
             return nil
         }.joined(separator: "\n")
+    }
+
+    private func cleanPreviewText(_ text: String) -> String {
+        var result = text
+        result = removing(pattern: #"<permissions instructions>.*?</permissions instructions>\s*"#, from: result)
+        result = removing(pattern: #"# AGENTS\.md instructions[^\n]*(?:\n|\r\n).*?</INSTRUCTIONS>\s*"#, from: result)
+        result = removing(pattern: #"\n{3,}"#, from: result, replacingWith: "\n\n")
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func removing(pattern: String, from text: String, replacingWith replacement: String = "") -> String {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
+            return text
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.stringByReplacingMatches(in: text, range: range, withTemplate: replacement)
     }
 
     private func backupStateFiles(stamp: String) throws -> [String] {

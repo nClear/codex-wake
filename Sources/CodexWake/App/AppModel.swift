@@ -13,6 +13,9 @@ final class AppModel: ObservableObject {
     @Published var selectedProjectID = ProjectSummary.allID {
         didSet { applyFilters() }
     }
+    @Published var projectSortMode: ProjectSortMode = .recent {
+        didSet { projects = ProjectSummary.make(from: threads, sort: projectSortMode) }
+    }
     @Published var selectedThreadID: String?
     @Published private(set) var projects: [ProjectSummary] = [.all]
     @Published private(set) var threads: [CodexThread] = []
@@ -54,7 +57,7 @@ final class AppModel: ObservableObject {
                 try store.loadThreads()
             }.value
             threads = loaded
-            projects = ProjectSummary.make(from: loaded)
+            projects = ProjectSummary.make(from: loaded, sort: projectSortMode)
             if selectedThreadID == nil {
                 selectedThreadID = loaded.first?.id
             }
@@ -224,15 +227,22 @@ final class AppModel: ObservableObject {
         }
 
         guard !query.isEmpty else {
-            filteredThreads = source
+            filteredThreads = sortThreadsByLatestMessage(source)
             selectFirstFilteredThreadIfNeeded()
             return
         }
 
-        filteredThreads = source.filter { thread in
+        filteredThreads = sortThreadsByLatestMessage(source.filter { thread in
             thread.matchesMetadata(query)
-        }
+        })
         selectFirstFilteredThreadIfNeeded()
+    }
+
+    private func sortThreadsByLatestMessage(_ threads: [CodexThread]) -> [CodexThread] {
+        threads.sorted { lhs, rhs in
+            if lhs.updatedAt != rhs.updatedAt { return lhs.updatedAt > rhs.updatedAt }
+            return lhs.shortTitle.localizedCaseInsensitiveCompare(rhs.shortTitle) == .orderedAscending
+        }
     }
 
     private func selectFirstFilteredThreadIfNeeded() {

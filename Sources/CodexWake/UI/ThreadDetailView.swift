@@ -147,7 +147,7 @@ struct ThreadDetailView: View {
 
     @ViewBuilder
     private var preview: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Preview")
                 .font(.headline)
             if let rawError = model.preview?.rawError {
@@ -237,10 +237,11 @@ private struct MessagePreview: View {
     let message: PreviewMessage
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(message.role)
-                    .font(.caption.weight(.semibold))
+                Text(displayRole)
+                    .font(.system(size: isAssistant ? 15 : 13, weight: isAssistant ? .bold : .semibold))
+                    .foregroundStyle(headerColor)
                 Spacer()
                 if let timestamp = message.timestamp {
                     Text(timestamp)
@@ -249,10 +250,47 @@ private struct MessagePreview: View {
                 }
             }
             Text(message.text)
-                .font(.system(size: 13))
+                .font(.system(size: 14))
+                .lineSpacing(3)
                 .textSelection(.enabled)
         }
-        .padding(10)
-        .background(Color(NSColor.controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.vertical, 11)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(backgroundColor, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var normalizedRole: String {
+        message.role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private var isAssistant: Bool {
+        normalizedRole == "assistant"
+    }
+
+    private var displayRole: String {
+        switch normalizedRole {
+        case "user":
+            return "User"
+        case "assistant":
+            return "Assistant"
+        default:
+            return message.role.capitalized
+        }
+    }
+
+    private var headerColor: Color {
+        normalizedRole == "user" ? Color(red: 0.05, green: 0.30, blue: 0.52) : .primary
+    }
+
+    private var backgroundColor: Color {
+        switch normalizedRole {
+        case "user":
+            return Color(red: 0.88, green: 0.95, blue: 1.0)
+        case "assistant":
+            return Color(NSColor.controlBackgroundColor)
+        default:
+            return Color(NSColor.windowBackgroundColor)
+        }
     }
 }

@@ -20,6 +20,15 @@ struct ProjectSidebarView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
 
+            Picker("Project sort", selection: $model.projectSortMode) {
+                Text("Recent").tag(ProjectSortMode.recent)
+                Text("Name").tag(ProjectSortMode.name)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 14)
+            .padding(.bottom, 10)
+
             Divider()
 
             List(selection: $model.selectedProjectID) {
@@ -41,6 +50,7 @@ private struct ProjectRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(project.name)
+                    .font(.system(size: 15, weight: .semibold))
                     .lineLimit(1)
                 Spacer()
                 Text("\(project.totalCount)")

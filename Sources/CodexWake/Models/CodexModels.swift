@@ -68,7 +68,7 @@ struct CodexThread: Identifiable, Hashable {
 
 struct ProjectSummary: Identifiable, Hashable {
     static let allID = "__all__"
-    static let all = ProjectSummary(id: allID, name: "All Projects", path: "", totalCount: 0, hiddenCount: 0, shownCount: 0)
+    static let all = ProjectSummary(id: allID, name: "All Projects", path: "", totalCount: 0, hiddenCount: 0, shownCount: 0, latestUpdatedAt: nil)
 
     let id: String
     let name: String
@@ -76,8 +76,9 @@ struct ProjectSummary: Identifiable, Hashable {
     let totalCount: Int
     let hiddenCount: Int
     let shownCount: Int
+    let latestUpdatedAt: Date?
 
-    static func make(from threads: [CodexThread]) -> [ProjectSummary] {
+    static func make(from threads: [CodexThread], sort: ProjectSortMode = .recent) -> [ProjectSummary] {
         let grouped = Dictionary(grouping: threads, by: \.cwd)
         let projects = grouped.map { cwd, items in
             ProjectSummary(
@@ -86,12 +87,22 @@ struct ProjectSummary: Identifiable, Hashable {
                 path: cwd,
                 totalCount: items.count,
                 hiddenCount: items.filter(\.needsWake).count,
-                shownCount: items.filter(\.isShown).count
+                shownCount: items.filter(\.isShown).count,
+                latestUpdatedAt: items.map(\.updatedAt).max()
             )
         }
         .sorted { lhs, rhs in
-            if lhs.hiddenCount != rhs.hiddenCount { return lhs.hiddenCount > rhs.hiddenCount }
-            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            switch sort {
+            case .recent:
+                let lhsDate = lhs.latestUpdatedAt ?? .distantPast
+                let rhsDate = rhs.latestUpdatedAt ?? .distantPast
+                if lhsDate != rhsDate { return lhsDate > rhsDate }
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            case .name:
+                let order = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+                if order != .orderedSame { return order == .orderedAscending }
+                return (lhs.latestUpdatedAt ?? .distantPast) > (rhs.latestUpdatedAt ?? .distantPast)
+            }
         }
         let all = ProjectSummary(
             id: allID,
@@ -99,10 +110,18 @@ struct ProjectSummary: Identifiable, Hashable {
             path: "",
             totalCount: threads.count,
             hiddenCount: threads.filter(\.needsWake).count,
-            shownCount: threads.filter(\.isShown).count
+            shownCount: threads.filter(\.isShown).count,
+            latestUpdatedAt: threads.map(\.updatedAt).max()
         )
         return [all] + projects
     }
+}
+
+enum ProjectSortMode: String, CaseIterable, Identifiable {
+    case recent
+    case name
+
+    var id: String { rawValue }
 }
 
 struct ThreadPreview: Identifiable {

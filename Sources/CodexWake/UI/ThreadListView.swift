@@ -86,6 +86,9 @@ private struct ThreadRow: View {
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(2)
                 Spacer()
+                Text(WakeDates.shortDate(thread.createdAt))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                 StatusPill(text: thread.statusLabel, thread: thread)
             }
 
