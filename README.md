@@ -14,6 +14,8 @@ Download the latest macOS build from [Releases](https://github.com/nClear/codex-
 
 The release build is signed with a Developer ID certificate and notarized by Apple.
 
+See [CHANGELOG.md](CHANGELOG.md) for version history.
+
 To install it:
 
 1. Download the latest `Codex-Wake-*-macOS.zip`.
@@ -21,7 +23,7 @@ To install it:
 3. Move `Codex Wake.app` to `/Applications`.
 4. Open it.
 
-## What's New In 0.1.3
+## Latest In 0.1.3
 
 - More accurate chat titles and visibility status using `session_index.jsonl`.
 - Multi-select mode for selected chat actions.
