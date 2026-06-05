@@ -193,7 +193,7 @@ private struct ThreadSelectionToolbar: View {
         }
         .padding(8)
         .frame(height: 36)
-        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .background(WakeColors.reportBackground(.accentColor), in: RoundedRectangle(cornerRadius: 8))
         .alert("Wake \(model.selectedWakeableCount) selected chats?", isPresented: $isWakeConfirmationPresented) {
             Button("Wake") {
                 Task { await model.wakeSelectedThreads() }
@@ -260,7 +260,7 @@ private struct ThreadRow: View {
     }
 
     private var rowBackground: Color {
-        if isSelected { return Color.accentColor.opacity(0.12) }
+        if isSelected { return WakeColors.selectionBackground(.accentColor) }
         if isPrimary { return Color.primary.opacity(0.05) }
         return .clear
     }
@@ -275,7 +275,7 @@ private struct StatusPill: View {
             .font(.caption2.weight(.medium))
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .background(color.opacity(0.16), in: Capsule())
+            .background(WakeColors.selectionBackground(color), in: Capsule())
             .foregroundStyle(color)
             .help(helpText)
     }

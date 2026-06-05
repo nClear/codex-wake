@@ -77,7 +77,7 @@ struct ProjectSidebarView: View {
             }
             .listStyle(.sidebar)
         }
-        .background(Color(white: 0.94))
+        .background(WakeColors.sidebarBackground)
     }
 }
 
@@ -115,7 +115,7 @@ private struct BackupSidebarRow: View {
         .padding(.horizontal, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .background(isSelected ? accentColor.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+        .background(isSelected ? WakeColors.selectionBackground(accentColor) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

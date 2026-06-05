@@ -89,7 +89,7 @@ private struct SummaryPill: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(color.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+        .background(WakeColors.reportBackground(color), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

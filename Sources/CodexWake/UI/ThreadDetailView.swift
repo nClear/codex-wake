@@ -146,7 +146,7 @@ struct ThreadDetailView: View {
                 }
             }
             .padding(12)
-            .background(Color.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            .background(WakeColors.reportBackground(.green), in: RoundedRectangle(cornerRadius: 8))
         }
     }
 
@@ -169,7 +169,7 @@ struct ThreadDetailView: View {
             }
             .font(.system(size: 12))
             .padding(12)
-            .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            .background(WakeColors.reportBackground(.blue), in: RoundedRectangle(cornerRadius: 8))
         }
     }
 
@@ -192,7 +192,7 @@ struct ThreadDetailView: View {
             }
             .font(.system(size: 12))
             .padding(12)
-            .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            .background(WakeColors.reportBackground(.orange), in: RoundedRectangle(cornerRadius: 8))
         }
     }
 
@@ -218,7 +218,7 @@ struct ThreadDetailView: View {
             }
             .font(.system(size: 12))
             .padding(12)
-            .background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            .background(WakeColors.reportBackground(.purple), in: RoundedRectangle(cornerRadius: 8))
         }
     }
 
@@ -441,9 +441,9 @@ private struct MessagePreview: View {
     private var headerColor: Color {
         switch normalizedRole {
         case "user":
-            return Color(red: 0.05, green: 0.30, blue: 0.52)
+            return WakeColors.userMessageHeader
         case "steered":
-            return Color.orange
+            return WakeColors.steeredMessageHeader
         default:
             return .primary
         }
@@ -452,13 +452,13 @@ private struct MessagePreview: View {
     private var backgroundColor: Color {
         switch normalizedRole {
         case "user":
-            return Color(red: 0.88, green: 0.95, blue: 1.0)
+            return WakeColors.userMessageBackground
         case "steered":
-            return Color.orange.opacity(0.10)
+            return WakeColors.steeredMessageBackground
         case "assistant":
-            return Color(NSColor.controlBackgroundColor)
+            return WakeColors.panelBackground
         default:
-            return Color(NSColor.windowBackgroundColor)
+            return WakeColors.sidebarBackground
         }
     }
 }
