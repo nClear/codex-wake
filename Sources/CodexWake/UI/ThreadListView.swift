@@ -112,11 +112,6 @@ struct ThreadListView: View {
             }
             .listStyle(.plain)
         }
-        .onChange(of: model.selectedThreadID) { _, newValue in
-            guard !model.isSelectingThreads else { return }
-            guard let id = newValue, let thread = model.filteredThreads.first(where: { $0.id == id }) else { return }
-            model.selectThread(thread)
-        }
         .alert(
             "Wake complete",
             isPresented: Binding(

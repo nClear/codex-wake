@@ -31,22 +31,24 @@ struct ProjectSidebarView: View {
 
             Divider()
 
-            Button {
-                model.showBackups()
-            } label: {
-                BackupSidebarRow(
-                    title: "Backups",
-                    systemImage: "archivebox",
-                    count: model.backups.count,
-                    totalSize: model.backupTotalSizeText,
-                    isSelected: model.selectedSection == .backups,
-                    accentColor: .accentColor
-                )
+            if !model.backups.isEmpty {
+                Button {
+                    model.showBackups()
+                } label: {
+                    BackupSidebarRow(
+                        title: "Backups",
+                        systemImage: "archivebox",
+                        count: model.backups.count,
+                        totalSize: model.backupTotalSizeText,
+                        isSelected: model.selectedSection == .backups,
+                        accentColor: .accentColor
+                    )
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .help("View Codex Wake backup files")
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .help("View Codex Wake backup files")
 
             if !model.backupTrash.isEmpty {
                 Button {

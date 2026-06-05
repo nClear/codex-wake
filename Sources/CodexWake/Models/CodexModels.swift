@@ -148,11 +148,47 @@ struct PreviewMessage: Identifiable, Hashable {
     let role: String
     let text: String
     let timestamp: String?
+    let lineNumber: Int?
+    let branchLineNumber: Int?
+    let isTurnStart: Bool
+    let isSteered: Bool
+    let isFirstVisibleUserMessage: Bool
+
+    var canTrimFromHere: Bool {
+        (lineNumber ?? 0) > 1 && !isFirstVisibleUserMessage
+    }
+
+    var canBranchFromHere: Bool {
+        isTurnStart && (branchLineNumber ?? 0) > 2
+    }
 }
 
 struct WakeReport: Identifiable {
     let id = UUID()
     let threadID: String
+    let timestamp: String
+    let backups: [String]
+    let changedFiles: [String]
+}
+
+struct TrimReport: Identifiable {
+    let id = UUID()
+    let threadID: String
+    let timestamp: String
+    let deletedFromLine: Int
+    let removedLineCount: Int
+    let backups: [String]
+    let changedFiles: [String]
+}
+
+struct BranchReport: Identifiable {
+    let id = UUID()
+    let sourceThreadID: String
+    let newThreadID: String
+    let title: String
+    let createdFromLine: Int
+    let keptLineCount: Int
+    let rolloutPath: String
     let timestamp: String
     let backups: [String]
     let changedFiles: [String]
@@ -218,6 +254,8 @@ struct BackupFile: Identifiable, Hashable {
     let size: Int64
     let kind: BackupKind
     let originalExists: Bool
+    let chatTitle: String?
+    let reason: String
 }
 
 enum BackupKind: String, Hashable {

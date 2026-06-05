@@ -3,6 +3,8 @@ import SwiftUI
 struct ThreadDetailView: View {
     @EnvironmentObject private var model: AppModel
     @State private var isMoveSheetPresented = false
+    @State private var pendingTrimMessage: PreviewMessage?
+    @State private var pendingBranchMessage: PreviewMessage?
 
     var body: some View {
         Group {
@@ -14,6 +16,8 @@ struct ThreadDetailView: View {
                         actions(thread)
                         wakeReport
                         moveReport
+                        trimReport
+                        branchReport
                         preview
                     }
                     .padding(22)
@@ -22,6 +26,30 @@ struct ThreadDetailView: View {
             } else {
                 ContentUnavailableView("Select a chat", systemImage: "text.bubble")
             }
+        }
+        .alert("Trim from here?", isPresented: isTrimConfirmationPresented) {
+            Button("Cancel", role: .cancel) {
+                pendingTrimMessage = nil
+            }
+            Button("Trim", role: .destructive) {
+                guard let message = pendingTrimMessage else { return }
+                pendingTrimMessage = nil
+                Task { await model.trimSelectedThread(from: message) }
+            }
+        } message: {
+            Text("This deletes this user message and everything after it from the local Codex chat file. A backup will be created first. The first visible user message cannot be trimmed because Codex stores it as chat preview metadata.")
+        }
+        .alert("Branch from here?", isPresented: isBranchConfirmationPresented) {
+            Button("Cancel", role: .cancel) {
+                pendingBranchMessage = nil
+            }
+            Button("Create Branch") {
+                guard let message = pendingBranchMessage else { return }
+                pendingBranchMessage = nil
+                Task { await model.branchSelectedThread(from: message) }
+            }
+        } message: {
+            Text("This creates a new Codex chat with the conversation history before this Codex turn. The original chat is not changed.")
         }
     }
 
@@ -146,15 +174,89 @@ struct ThreadDetailView: View {
     }
 
     @ViewBuilder
+    private var trimReport: some View {
+        if let report = model.selectedTrimReport {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Trim complete @ \(WakeDates.displayBackupStamp(report.timestamp))")
+                    .font(.headline)
+                row("Deleted from line", "\(report.deletedFromLine)")
+                row("Removed lines", "\(report.removedLineCount)")
+                if !report.backups.isEmpty {
+                    Text("Backups")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    ForEach(report.backups, id: \.self) { path in
+                        Text(path).font(.caption.monospaced()).textSelection(.enabled)
+                    }
+                }
+            }
+            .font(.system(size: 12))
+            .padding(12)
+            .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    @ViewBuilder
+    private var branchReport: some View {
+        if let report = model.selectedBranchReport {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Branch created @ \(WakeDates.displayBackupStamp(report.timestamp))")
+                    .font(.headline)
+                row("New chat", report.title)
+                row("New ID", report.newThreadID)
+                row("Created before turn line", "\(report.createdFromLine)")
+                row("Kept lines", "\(report.keptLineCount)")
+                row("Rollout", report.rolloutPath)
+                if !report.backups.isEmpty {
+                    Text("Safety backups")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    ForEach(report.backups, id: \.self) { path in
+                        Text(path).font(.caption.monospaced()).textSelection(.enabled)
+                    }
+                }
+            }
+            .font(.system(size: 12))
+            .padding(12)
+            .background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    @ViewBuilder
     private var preview: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Preview")
-                .font(.headline)
+            HStack {
+                Text("Preview")
+                    .font(.headline)
+                if let count = model.preview?.messages.count, count > 0 {
+                    Text("\(count) messages")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
             if let rawError = model.preview?.rawError {
                 Text(rawError)
                     .foregroundStyle(.red)
+            } else if model.isPreviewLoading {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Loading full chat...")
+                        .foregroundStyle(.secondary)
+                }
             } else if let messages = model.preview?.messages, !messages.isEmpty {
                 ForEach(messages) { message in
+                    if isUserMessage(message) {
+                        ThreadEditDivider(
+                            isTrimDisabled: model.isLoading || !message.canTrimFromHere,
+                            canBranch: message.canBranchFromHere && !model.isLoading
+                        ) {
+                            pendingTrimMessage = message
+                        } onBranch: {
+                            pendingBranchMessage = message
+                        }
+                    }
                     MessagePreview(message: message)
                 }
             } else {
@@ -162,6 +264,32 @@ struct ThreadDetailView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var isTrimConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { pendingTrimMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingTrimMessage = nil
+                }
+            }
+        )
+    }
+
+    private var isBranchConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { pendingBranchMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingBranchMessage = nil
+                }
+            }
+        )
+    }
+
+    private func isUserMessage(_ message: PreviewMessage) -> Bool {
+        message.role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "user"
     }
 }
 
@@ -233,6 +361,34 @@ private struct MoveThreadSheet: View {
     }
 }
 
+private struct ThreadEditDivider: View {
+    let isTrimDisabled: Bool
+    let canBranch: Bool
+    let onTrim: () -> Void
+    let onBranch: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Rectangle()
+                .fill(Color.secondary.opacity(0.22))
+                .frame(height: 1)
+            if canBranch {
+                Button("Branch from here", action: onBranch)
+                    .buttonStyle(.borderless)
+                    .font(.caption.weight(.semibold))
+                    .help("Create a new chat with the conversation history before this Codex turn. The original chat is not changed.")
+            }
+            Button("Trim from here", role: .destructive, action: onTrim)
+                .buttonStyle(.borderless)
+                .font(.caption.weight(.semibold))
+                .disabled(isTrimDisabled)
+                .help(isTrimDisabled ? "The first visible user message cannot be trimmed because Codex stores it as chat preview metadata." : "Delete this user message and everything after it. A backup is created first.")
+        }
+        .padding(.top, 4)
+        .padding(.bottom, -2)
+    }
+}
+
 private struct MessagePreview: View {
     let message: PreviewMessage
 
@@ -261,7 +417,8 @@ private struct MessagePreview: View {
     }
 
     private var normalizedRole: String {
-        message.role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if message.isSteered { return "steered" }
+        return message.role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     private var isAssistant: Bool {
@@ -272,6 +429,8 @@ private struct MessagePreview: View {
         switch normalizedRole {
         case "user":
             return "User"
+        case "steered":
+            return "Steered message"
         case "assistant":
             return "Assistant"
         default:
@@ -280,13 +439,22 @@ private struct MessagePreview: View {
     }
 
     private var headerColor: Color {
-        normalizedRole == "user" ? Color(red: 0.05, green: 0.30, blue: 0.52) : .primary
+        switch normalizedRole {
+        case "user":
+            return Color(red: 0.05, green: 0.30, blue: 0.52)
+        case "steered":
+            return Color.orange
+        default:
+            return .primary
+        }
     }
 
     private var backgroundColor: Color {
         switch normalizedRole {
         case "user":
             return Color(red: 0.88, green: 0.95, blue: 1.0)
+        case "steered":
+            return Color.orange.opacity(0.10)
         case "assistant":
             return Color(NSColor.controlBackgroundColor)
         default:

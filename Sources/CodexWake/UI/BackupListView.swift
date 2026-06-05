@@ -54,9 +54,19 @@ private struct BackupRow: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text(backup.originalName)
-                .font(.caption)
-                .lineLimit(1)
+            if let chatTitle = backup.chatTitle {
+                Text(chatTitle)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                Text(backup.reason)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            } else {
+                Text(backup.originalName)
+                    .font(.caption)
+                    .lineLimit(1)
+            }
 
             HStack(spacing: 8) {
                 Label(WakeDates.display(backup.createdAt ?? backup.modifiedAt), systemImage: "clock")

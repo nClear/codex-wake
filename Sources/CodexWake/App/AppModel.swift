@@ -35,8 +35,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var backups: [BackupFile] = []
     @Published private(set) var backupTrash: [BackupFile] = []
     @Published var preview: ThreadPreview?
+    @Published var isPreviewLoading = false
     @Published var wakeReport: WakeReport?
     @Published var moveReport: MoveReport?
+    @Published var trimReport: TrimReport?
+    @Published var branchReport: BranchReport?
     @Published var batchWakeSuccessMessage: String?
     @Published private(set) var isDemoMode: Bool
 
@@ -102,6 +105,16 @@ final class AppModel: ObservableObject {
         return moveReport
     }
 
+    var selectedTrimReport: TrimReport? {
+        guard trimReport?.threadID == selectedThreadID else { return nil }
+        return trimReport
+    }
+
+    var selectedBranchReport: BranchReport? {
+        guard branchReport?.newThreadID == selectedThreadID else { return nil }
+        return branchReport
+    }
+
     var moveTargetProjects: [ProjectSummary] {
         guard let thread = selectedThread else { return [] }
         return projects.filter { project in
@@ -134,8 +147,9 @@ final class AppModel: ObservableObject {
             backups = loaded.backups
             backupTrash = loaded.backupTrash
             projects = ProjectSummary.make(from: loaded.threads, sort: projectSortMode)
-            if selectedThreadID == nil {
-                selectedThreadID = loaded.threads.first?.id
+            if let selectedThreadID, !loaded.threads.contains(where: { $0.id == selectedThreadID }) {
+                self.selectedThreadID = nil
+                preview = nil
             }
             if selectedBackupID == nil || !loaded.backups.contains(where: { $0.id == selectedBackupID }) {
                 selectedBackupID = loaded.backups.first?.id
@@ -160,6 +174,7 @@ final class AppModel: ObservableObject {
         selectedSection = .chats
         clearThreadSelection()
         selectedThreadID = thread.id
+        preview = nil
         Task { await loadPreview(threadID: thread.id) }
     }
 
@@ -354,6 +369,29 @@ final class AppModel: ObservableObject {
         status = "Original path copied"
     }
 
+    func restoreSelectedBackup() async {
+        guard let backup = selectedBackup else { return }
+        isLoading = true
+        status = "Restoring backup..."
+        errorMessage = nil
+        defer { isLoading = false }
+
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                try self.store.restoreBackup(backup)
+            }.value
+            status = "Chat restored"
+            await refresh()
+            selectedSection = .backups
+            if let selectedThreadID {
+                await loadPreview(threadID: selectedThreadID)
+            }
+        } catch {
+            errorMessage = readable(error)
+            status = "Restore failed"
+        }
+    }
+
     func revealSelectedTrashBackupInFinder() {
         guard !isDemoMode else {
             status = "Demo mode has no local trash file"
@@ -434,13 +472,20 @@ final class AppModel: ObservableObject {
     func loadPreview(threadID: String) async {
         guard let thread = threads.first(where: { $0.id == threadID }) else {
             preview = nil
+            isPreviewLoading = false
             return
         }
+        isPreviewLoading = true
+        preview = nil
+        defer { isPreviewLoading = false }
         do {
-            preview = try await Task.detached(priority: .userInitiated) {
+            let loadedPreview = try await Task.detached(priority: .userInitiated) {
                 try self.store.loadPreview(for: thread)
             }.value
+            guard selectedThreadID == threadID else { return }
+            preview = loadedPreview
         } catch {
+            guard selectedThreadID == threadID else { return }
             preview = ThreadPreview(threadID: thread.id, messages: [], rawError: readable(error))
         }
     }
@@ -462,6 +507,8 @@ final class AppModel: ObservableObject {
         errorMessage = nil
         wakeReport = nil
         moveReport = nil
+        trimReport = nil
+        branchReport = nil
         defer { isLoading = false }
 
         do {
@@ -480,6 +527,65 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func trimSelectedThread(from message: PreviewMessage) async {
+        guard let thread = selectedThread, let lineNumber = message.lineNumber else { return }
+        guard message.canTrimFromHere else {
+            status = "Cannot trim the first visible user message"
+            return
+        }
+        isLoading = true
+        status = "Trimming chat..."
+        errorMessage = nil
+        wakeReport = nil
+        moveReport = nil
+        trimReport = nil
+        branchReport = nil
+        defer { isLoading = false }
+
+        do {
+            let trimmedThreadID = thread.id
+            let report = try await Task.detached(priority: .userInitiated) {
+                try self.store.trim(thread: thread, fromLine: lineNumber)
+            }.value
+            trimReport = report
+            status = "Trimmed: \(thread.shortTitle)"
+            await refresh()
+            selectedThreadID = trimmedThreadID
+            await loadPreview(threadID: trimmedThreadID)
+        } catch {
+            errorMessage = readable(error)
+            status = "Trim failed"
+        }
+    }
+
+    func branchSelectedThread(from message: PreviewMessage) async {
+        guard let thread = selectedThread, let lineNumber = message.branchLineNumber else { return }
+        isLoading = true
+        status = "Creating chat branch..."
+        errorMessage = nil
+        wakeReport = nil
+        moveReport = nil
+        trimReport = nil
+        branchReport = nil
+        defer { isLoading = false }
+
+        do {
+            let report = try await Task.detached(priority: .userInitiated) {
+                try self.store.branch(thread: thread, fromLine: lineNumber)
+            }.value
+            branchReport = report
+            status = "Branched: \(report.title)"
+            await refresh()
+            selectedProjectID = thread.cwd
+            selectedThreadID = report.newThreadID
+            applyFilters()
+            await loadPreview(threadID: report.newThreadID)
+        } catch {
+            errorMessage = readable(error)
+            status = "Branch failed"
+        }
+    }
+
     func moveSelectedThread(to project: ProjectSummary) async {
         guard let thread = selectedThread else { return }
         isLoading = true
@@ -487,6 +593,8 @@ final class AppModel: ObservableObject {
         errorMessage = nil
         wakeReport = nil
         moveReport = nil
+        trimReport = nil
+        branchReport = nil
         defer { isLoading = false }
 
         do {
@@ -620,7 +728,7 @@ final class AppModel: ObservableObject {
 
     private func selectFirstFilteredThreadIfNeeded() {
         guard !filteredThreads.contains(where: { $0.id == selectedThreadID }) else { return }
-        selectedThreadID = filteredThreads.first?.id
+        selectedThreadID = nil
         preview = nil
     }
 

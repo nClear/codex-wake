@@ -92,7 +92,9 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
                 modifiedAt: date,
                 size: size,
                 kind: kind,
-                originalExists: true
+                originalExists: true,
+                chatTitle: kind == .chatFile ? "Fix disappearing sidebar threads" : nil,
+                reason: kind == .chatFile ? "Created before Trim from here" : "Created by Codex Wake"
             )
         }
     }
@@ -102,22 +104,42 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
             PreviewMessage(
                 role: "user",
                 text: thread.firstUserMessage,
-                timestamp: WakeDates.isoDemo(thread.createdAt)
+                timestamp: WakeDates.isoDemo(thread.createdAt),
+                lineNumber: 8,
+                branchLineNumber: 2,
+                isTurnStart: true,
+                isSteered: false,
+                isFirstVisibleUserMessage: true
             ),
             PreviewMessage(
                 role: "assistant",
                 text: "I will inspect the local metadata shape first, then make the smallest safe change and verify it with a fresh build.",
-                timestamp: WakeDates.isoDemo(thread.createdAt.addingTimeInterval(90))
+                timestamp: WakeDates.isoDemo(thread.createdAt.addingTimeInterval(90)),
+                lineNumber: 17,
+                branchLineNumber: nil,
+                isTurnStart: false,
+                isSteered: false,
+                isFirstVisibleUserMessage: false
             ),
             PreviewMessage(
                 role: "user",
                 text: "Good. Keep the original files untouched, make a backup before changing anything, and show me exactly what changed.",
-                timestamp: WakeDates.isoDemo(thread.createdAt.addingTimeInterval(240))
+                timestamp: WakeDates.isoDemo(thread.createdAt.addingTimeInterval(240)),
+                lineNumber: 24,
+                branchLineNumber: 22,
+                isTurnStart: true,
+                isSteered: false,
+                isFirstVisibleUserMessage: false
             ),
             PreviewMessage(
                 role: "assistant",
                 text: "Done. The demo data is intentionally synthetic, search works across titles and preview text, and write actions only update this temporary demo session.",
-                timestamp: WakeDates.isoDemo(thread.updatedAt)
+                timestamp: WakeDates.isoDemo(thread.updatedAt),
+                lineNumber: 31,
+                branchLineNumber: nil,
+                isTurnStart: false,
+                isSteered: false,
+                isFirstVisibleUserMessage: false
             )
         ]
         return ThreadPreview(threadID: thread.id, messages: messages, rawError: nil)
@@ -140,6 +162,31 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
         )
     }
 
+    func trim(thread: CodexThread, fromLine lineNumber: Int) throws -> TrimReport {
+        TrimReport(
+            threadID: thread.id,
+            timestamp: "demo",
+            deletedFromLine: lineNumber,
+            removedLineCount: 3,
+            backups: ["Demo mode does not read or write local Codex files."],
+            changedFiles: []
+        )
+    }
+
+    func branch(thread: CodexThread, fromLine lineNumber: Int) throws -> BranchReport {
+        BranchReport(
+            sourceThreadID: thread.id,
+            newThreadID: "demo-branch-\(thread.id)",
+            title: "Branch: \(thread.shortTitle)",
+            createdFromLine: lineNumber,
+            keptLineCount: 2,
+            rolloutPath: "/demo/codex-wake/branch-\(thread.id).jsonl",
+            timestamp: "demo",
+            backups: ["Demo mode does not read or write local Codex files."],
+            changedFiles: []
+        )
+    }
+
     func move(thread: CodexThread, to project: ProjectSummary) throws -> MoveReport {
         lock.lock()
         movedProjects[thread.id] = project.path
@@ -153,6 +200,12 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
             backups: ["Demo mode does not read or write local Codex files."],
             changedFiles: []
         )
+    }
+
+    func restoreBackup(_ backup: BackupFile) throws {
+        guard backup.kind == .chatFile else {
+            throw WakeError.commandFailed("Only chat file backups can be restored.")
+        }
     }
 
     func moveBackupToTrash(_ backup: BackupFile) throws {
