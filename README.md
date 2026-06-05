@@ -23,14 +23,13 @@ To install it:
 3. Move `Codex Wake.app` to `/Applications`.
 4. Open it.
 
-## Latest In 0.1.3
+## Latest In 0.1.4
 
-- More accurate chat titles and visibility status using `session_index.jsonl`.
-- Multi-select mode for selected chat actions.
-- Batch **Wake** for selected chats, with confirmation.
-- Context menu actions for chat rows.
-- Backup Manager for viewing backup files created by Codex Wake.
-- App trash for backup files, with a separate **Trash** section and confirmed permanent cleanup.
+- **Trim from here** for safely cutting a local chat back to an earlier point.
+- **Branch from here** for creating a new chat from an earlier turn without changing the original.
+- Chat backup restore from the Backup Manager.
+- Full-chat preview loading with turn-aware branch points.
+- Adaptive dark mode colors.
 
 ## Demo Mode
 
@@ -55,8 +54,11 @@ CODEX_WAKE_DEMO=1 "dist/Codex Wake.app/Contents/MacOS/CodexWake"
 - Wake a thread by updating the local metadata Codex uses for recent/sidebar visibility.
 - Wake multiple selected threads.
 - Move a thread between known projects by updating its local project metadata.
+- Trim a thread from a selected user message, with a backup created first.
+- Create a branch thread from a selected turn without changing the original.
 - Create backups before every wake operation.
 - View Codex Wake backup files in the **Backups** section.
+- Restore chat file backups from the **Backups** section.
 - Move backup files to Codex Wake's app trash before permanent cleanup.
 - Reveal a thread JSONL file in Finder or copy its path.
 
@@ -100,9 +102,17 @@ When you move a selected thread, Codex Wake creates timestamped backups and upda
 
 After the move, Codex Wake reloads the full thread list so project counts and filters reflect the new location.
 
+## Trim And Branch
+
+**Trim from here** creates a backup of the selected chat JSONL file, then removes the selected user message and everything after it from the local chat file. The first visible user message cannot be trimmed because Codex stores it as chat preview metadata.
+
+**Branch from here** creates a new chat using the conversation history before the selected Codex turn. The original chat is not changed. Codex Wake creates safety backups for the local state files before registering the new branch.
+
 ## Backups And Trash
 
 Codex Wake creates timestamped backup files before changing Codex metadata. The **Backups** section lists those backup files with their original path, size, kind, and creation time.
+
+Chat file backups can be restored from the **Backups** section. Restoring replaces the current chat file with the selected restore point. The selected restore point stays in Backups.
 
 Backup files can be moved to Codex Wake's app trash. This does not immediately delete them from disk. When the app trash contains files, a **Trash** section appears in the sidebar where you can inspect them.
 
@@ -135,7 +145,7 @@ dist/Codex Wake.app
 
 ## Safety Notes
 
-Codex Wake edits local Codex metadata when you press **Wake**, **Wake selected**, or **Move**. Keep Codex Desktop closed while changing old threads if you want to avoid concurrent writes.
+Codex Wake edits local Codex metadata when you press **Wake**, **Wake selected**, **Move**, **Trim from here**, **Branch from here**, or **Restore Chat**. Keep Codex Desktop closed while changing old threads if you want to avoid concurrent writes.
 
 If something looks wrong after a wake or move operation, restore the backup files from the **Backups** section. Do not empty app trash until you are sure you no longer need those backups.
 

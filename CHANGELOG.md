@@ -2,6 +2,14 @@
 
 All notable changes to Codex Wake are documented here.
 
+## 0.1.4 - 2026-06-05
+
+- Added **Trim from here** for cutting a local chat back to an earlier user message, with a backup created first.
+- Added **Branch from here** for creating a new chat from an earlier Codex turn without changing the original.
+- Added chat backup restore from the Backup Manager.
+- Improved full-chat preview loading and turn-aware branch points.
+- Added adaptive dark mode colors.
+
 ## 0.1.3 - 2026-05-31
 
 - Improved chat title and visibility status detection using `session_index.jsonl`.
