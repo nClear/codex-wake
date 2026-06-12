@@ -54,6 +54,7 @@ CODEX_WAKE_DEMO=1 "dist/Codex Wake.app/Contents/MacOS/CodexWake"
 - Wake a thread by updating the local metadata Codex uses for recent/sidebar visibility.
 - Wake multiple selected threads.
 - Move a thread between known projects by updating its local project metadata.
+- Move a thread to Codex Wake's app trash and remove it from local Codex metadata.
 - Trim a thread from a selected user message, with a backup created first.
 - Create a branch thread from a selected turn without changing the original.
 - Create backups before every wake operation.
@@ -102,6 +103,18 @@ When you move a selected thread, Codex Wake creates timestamped backups and upda
 
 After the move, Codex Wake reloads the full thread list so project counts and filters reflect the new location.
 
+## Move To Trash
+
+When you move a selected thread to Trash, Codex Wake creates timestamped backups, writes a restore manifest, and then removes the chat from the local Codex metadata used for listing:
+
+- `threads` row in `state_5.sqlite`
+- matching `session_index.jsonl` entry
+- the thread JSONL file, moved to `~/.codex/.codex-wake-trash/threads/` when it still exists
+
+If the chat JSONL file is already missing, Codex Wake cleans the metadata only. This is useful for removing projects that still appear in Codex Wake after their local chat files were deleted elsewhere.
+
+Trashed chats appear in the **Trash** section. From there you can restore a chat, reveal or copy the trashed file path, copy the original path, or permanently delete it.
+
 ## Trim And Branch
 
 **Trim from here** creates a backup of the selected chat JSONL file, then removes the selected user message and everything after it from the local chat file. The first visible user message cannot be trimmed because Codex stores it as chat preview metadata.
@@ -114,9 +127,9 @@ Codex Wake creates timestamped backup files before changing Codex metadata. The 
 
 Chat file backups can be restored from the **Backups** section. Restoring replaces the current chat file with the selected restore point. The selected restore point stays in Backups.
 
-Backup files can be moved to Codex Wake's app trash. This does not immediately delete them from disk. When the app trash contains files, a **Trash** section appears in the sidebar where you can inspect them.
+Backup files and chats can be moved to Codex Wake's app trash. This does not immediately delete them from disk. When the app trash contains files, a **Trash** section appears in the sidebar where you can inspect them.
 
-The **Empty Trash** action permanently deletes files from Codex Wake's app trash and asks for confirmation first. After emptying trash, those backup files cannot be restored from inside Codex Wake.
+The **Empty Trash** action permanently deletes files from Codex Wake's app trash and asks for confirmation first. After emptying trash, those backup files and trashed chats cannot be restored from inside Codex Wake.
 
 ## Build
 
@@ -145,9 +158,9 @@ dist/Codex Wake.app
 
 ## Safety Notes
 
-Codex Wake edits local Codex metadata when you press **Wake**, **Wake selected**, **Move**, **Trim from here**, **Branch from here**, or **Restore Chat**. Keep Codex Desktop closed while changing old threads if you want to avoid concurrent writes.
+Codex Wake edits local Codex metadata when you press **Wake**, **Wake selected**, **Move**, **Move to Trash**, **Trim from here**, **Branch from here**, or **Restore Chat**. Keep Codex Desktop closed while changing old threads if you want to avoid concurrent writes.
 
-If something looks wrong after a wake or move operation, restore the backup files from the **Backups** section. Do not empty app trash until you are sure you no longer need those backups.
+If something looks wrong after a wake or move operation, restore the backup files from the **Backups** section. If you moved a chat to Trash by mistake, restore it from the **Trash** section. Do not empty app trash until you are sure you no longer need those files.
 
 ## Status
 

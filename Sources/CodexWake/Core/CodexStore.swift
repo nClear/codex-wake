@@ -7,6 +7,7 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
     private let stateDB: URL
     private let sessionIndex: URL
     private let backupTrash: URL
+    private let threadTrash: URL
 
     init(codexHome: URL? = nil) {
         let home = codexHome ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
@@ -14,6 +15,7 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
         self.stateDB = home.appendingPathComponent("state_5.sqlite")
         self.sessionIndex = home.appendingPathComponent("session_index.jsonl")
         self.backupTrash = home.appendingPathComponent(".codex-wake-trash", isDirectory: true)
+        self.threadTrash = backupTrash.appendingPathComponent("threads", isDirectory: true)
     }
 
     func loadThreads() throws -> [CodexThread] {
@@ -58,6 +60,49 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
     func loadBackupTrash() throws -> [BackupFile] {
         guard fileManager.fileExists(atPath: backupTrash.path) else { return [] }
         return try scanBackups(in: backupTrash, includeTrash: true)
+    }
+
+    func loadThreadTrash() throws -> [TrashedThread] {
+        guard fileManager.fileExists(atPath: threadTrash.path) else { return [] }
+        let keys: [URLResourceKey] = [.isRegularFileKey]
+        guard let enumerator = fileManager.enumerator(
+            at: threadTrash,
+            includingPropertiesForKeys: keys,
+            options: [.skipsPackageDescendants]
+        ) else {
+            return []
+        }
+
+        var threads: [TrashedThread] = []
+        for case let url as URL in enumerator {
+            guard url.lastPathComponent == "manifest.json" else { continue }
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            guard values?.isRegularFile != false else { continue }
+            let data = try Data(contentsOf: url)
+            let manifest = try JSONDecoder().decode(TrashedThreadManifest.self, from: data)
+            let trashURL = manifest.trashPath.map { URL(fileURLWithPath: $0) }
+            let size = trashURL.flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize }.map(Int64.init) ?? 0
+            threads.append(
+                TrashedThread(
+                    threadID: manifest.threadID,
+                    title: manifest.title,
+                    originalPath: manifest.originalPath,
+                    trashPath: manifest.trashPath,
+                    manifestPath: url.path,
+                    cwd: manifest.cwd,
+                    trashedAt: WakeDates.parseISO(manifest.trashedAt),
+                    size: size,
+                    originalExists: fileManager.fileExists(atPath: manifest.originalPath)
+                )
+            )
+        }
+
+        return threads.sorted { lhs, rhs in
+            let lhsDate = lhs.trashedAt ?? .distantPast
+            let rhsDate = rhs.trashedAt ?? .distantPast
+            if lhsDate != rhsDate { return lhsDate > rhsDate }
+            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        }
     }
 
     private func scanBackups(in root: URL, includeTrash: Bool) throws -> [BackupFile] {
@@ -466,6 +511,132 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
         )
     }
 
+    func moveThreadToTrash(_ thread: CodexThread) throws -> TrashThreadReport {
+        let rolloutURL = thread.rolloutURL.standardizedFileURL
+        let sessionsRoot = codexHome.appendingPathComponent("sessions", isDirectory: true).standardizedFileURL
+        let fileExists = fileManager.fileExists(atPath: rolloutURL.path)
+        if fileExists && !rolloutURL.path.hasPrefix(sessionsRoot.path + "/") {
+            throw WakeError.commandFailed("Refusing to trash a chat file outside ~/.codex/sessions.")
+        }
+
+        let sqliteRecord = try loadFullThreadRecord(threadID: thread.id)
+        let sessionIndexEntry = try loadSessionIndex()[thread.id]
+        let stamp = backupStamp()
+        let backupSuffix = "\(stamp)-trash-thread"
+        var backups: [String] = []
+        var changed: [String] = []
+
+        backups += try backupStateFiles(stamp: backupSuffix)
+        if fileManager.fileExists(atPath: sessionIndex.path) {
+            backups.append(try backup(sessionIndex, suffix: backupSuffix).path)
+        }
+
+        var trashedPath: String?
+        let trashDirectory = threadTrash.appendingPathComponent(thread.id, isDirectory: true)
+        try fileManager.createDirectory(at: trashDirectory, withIntermediateDirectories: true)
+        if fileExists {
+            let destination = uniqueTrashURL(for: rolloutURL.lastPathComponent, in: trashDirectory)
+            try fileManager.moveItem(at: rolloutURL, to: destination)
+            trashedPath = destination.path
+            changed.append(thread.rolloutPath)
+        }
+
+        let manifest = TrashedThreadManifest(
+            version: 1,
+            threadID: thread.id,
+            title: thread.shortTitle,
+            originalPath: thread.rolloutPath,
+            trashPath: trashedPath,
+            cwd: thread.cwd,
+            trashedAt: WakeDates.isoNowForJSONL(),
+            sqliteRecord: sqliteRecord,
+            sessionIndexEntry: sessionIndexEntry
+        )
+        try writeTrashManifest(manifest, to: trashDirectory.appendingPathComponent("manifest.json"))
+
+        try deleteSQLiteThread(threadID: thread.id)
+        changed.append(stateDB.path)
+
+        if fileManager.fileExists(atPath: sessionIndex.path) {
+            try removeSessionIndexEntry(threadID: thread.id)
+            changed.append(sessionIndex.path)
+        }
+
+        return TrashThreadReport(
+            threadID: thread.id,
+            title: thread.shortTitle,
+            rolloutPath: thread.rolloutPath,
+            trashedPath: trashedPath,
+            timestamp: stamp,
+            backups: backups,
+            changedFiles: changed
+        )
+    }
+
+    func restoreTrashedThread(_ thread: TrashedThread) throws {
+        let manifestURL = URL(fileURLWithPath: thread.manifestPath).standardizedFileURL
+        guard manifestURL.path.hasPrefix(threadTrash.standardizedFileURL.path + "/") else {
+            throw WakeError.commandFailed("Refusing to restore a chat outside Codex Wake trash.")
+        }
+        let manifest = try JSONDecoder().decode(TrashedThreadManifest.self, from: Data(contentsOf: manifestURL))
+        let originalURL = URL(fileURLWithPath: manifest.originalPath).standardizedFileURL
+        let sessionsRoot = codexHome.appendingPathComponent("sessions", isDirectory: true).standardizedFileURL
+        guard originalURL.path.hasPrefix(sessionsRoot.path + "/") else {
+            throw WakeError.commandFailed("Refusing to restore a chat outside ~/.codex/sessions.")
+        }
+        if fileManager.fileExists(atPath: originalURL.path) {
+            throw WakeError.commandFailed("Original chat file already exists.")
+        }
+
+        _ = try backupStateFiles(stamp: "\(backupStamp())-before-trash-restore")
+        if fileManager.fileExists(atPath: sessionIndex.path) {
+            _ = try backup(sessionIndex, suffix: "\(backupStamp())-before-trash-restore")
+        }
+        try fileManager.createDirectory(at: originalURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let trashPath = manifest.trashPath {
+            let trashURL = URL(fileURLWithPath: trashPath).standardizedFileURL
+            guard trashURL.path.hasPrefix(threadTrash.standardizedFileURL.path + "/"),
+                  fileManager.fileExists(atPath: trashURL.path)
+            else {
+                throw WakeError.commandFailed("Trashed chat file is missing.")
+            }
+            try fileManager.copyItem(at: trashURL, to: originalURL)
+        }
+
+        try insertFullThreadRecord(manifest.sqliteRecord)
+        if let entry = manifest.sessionIndexEntry {
+            try appendSessionIndexEntry(entry)
+        }
+        try deleteTrashDirectory(containing: manifestURL)
+    }
+
+    func deleteTrashedThreadPermanently(_ thread: TrashedThread) throws {
+        let manifestURL = URL(fileURLWithPath: thread.manifestPath).standardizedFileURL
+        guard manifestURL.path.hasPrefix(threadTrash.standardizedFileURL.path + "/") else {
+            throw WakeError.commandFailed("Refusing to delete a file outside Codex Wake trash.")
+        }
+        try deleteTrashDirectory(containing: manifestURL)
+    }
+
+    func emptyThreadTrash() throws -> Int {
+        guard fileManager.fileExists(atPath: threadTrash.path) else { return 0 }
+        let directories = try fileManager.contentsOfDirectory(
+            at: threadTrash,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+        var removed = 0
+        for directory in directories {
+            let standardized = directory.standardizedFileURL
+            guard standardized.path.hasPrefix(threadTrash.standardizedFileURL.path + "/") else { continue }
+            let values = try? standardized.resourceValues(forKeys: [.isDirectoryKey])
+            guard values?.isDirectory == true else { continue }
+            try fileManager.removeItem(at: standardized)
+            removed += 1
+        }
+        return removed
+    }
+
     private func loadThreadRows() throws -> [ThreadRow] {
         let query = """
         select id, rollout_path, created_at, updated_at, source, coalesce(thread_source, '') as thread_source,
@@ -768,6 +939,21 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
         return destination
     }
 
+    private func writeTrashManifest(_ manifest: TrashedThreadManifest, to url: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(manifest)
+        try data.write(to: url, options: .atomic)
+    }
+
+    private func deleteTrashDirectory(containing manifestURL: URL) throws {
+        let directory = manifestURL.deletingLastPathComponent().standardizedFileURL
+        guard directory.path.hasPrefix(threadTrash.standardizedFileURL.path + "/") else {
+            throw WakeError.commandFailed("Refusing to delete a file outside Codex Wake trash.")
+        }
+        try fileManager.removeItem(at: directory)
+    }
+
     private func updateSQLite(threadID: String, updatedAt: Int64, updatedAtMs: Int64) throws {
         let sql = """
         update threads
@@ -786,6 +972,128 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
         where id = '\(escapedThreadID)';
         """
         _ = try Shell.run("/usr/bin/sqlite3", [stateDB.path, sql])
+    }
+
+    private func deleteSQLiteThread(threadID: String) throws {
+        _ = try Shell.run(
+            "/usr/bin/sqlite3",
+            [stateDB.path, "delete from threads where id = '\(sql(threadID))';"]
+        )
+    }
+
+    private func loadFullThreadRecord(threadID: String) throws -> ThreadSQLiteRecord {
+        let query = """
+        select id, rollout_path, created_at, updated_at, source, model_provider, cwd, title,
+               sandbox_policy, approval_mode, tokens_used, has_user_event, archived, archived_at,
+               git_sha, git_branch, git_origin_url, cli_version, first_user_message,
+               agent_nickname, agent_role, memory_mode, model, reasoning_effort, agent_path,
+               created_at_ms, updated_at_ms, thread_source, preview
+        from threads
+        where id = '\(sql(threadID))';
+        """
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(stateDB.path, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK,
+              let database
+        else {
+            throw WakeError.commandFailed("Cannot open SQLite database")
+        }
+        defer { sqlite3_close(database) }
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, query, -1, &statement, nil) == SQLITE_OK,
+              let statement
+        else {
+            let message = String(cString: sqlite3_errmsg(database))
+            throw WakeError.commandFailed("Cannot prepare SQLite query: \(message)")
+        }
+        defer { sqlite3_finalize(statement) }
+
+        guard sqlite3_step(statement) == SQLITE_ROW else {
+            throw WakeError.commandFailed("Thread metadata not found in Codex state database.")
+        }
+
+        return ThreadSQLiteRecord(
+            id: text(statement, 0),
+            rolloutPath: text(statement, 1),
+            createdAt: int64(statement, 2) ?? 0,
+            updatedAt: int64(statement, 3) ?? 0,
+            source: text(statement, 4),
+            modelProvider: text(statement, 5),
+            cwd: text(statement, 6),
+            title: text(statement, 7),
+            sandboxPolicy: text(statement, 8),
+            approvalMode: text(statement, 9),
+            tokensUsed: int64(statement, 10) ?? 0,
+            hasUserEvent: int64(statement, 11) ?? 0,
+            archived: int64(statement, 12) ?? 0,
+            archivedAt: int64(statement, 13),
+            gitSHA: nullableText(statement, 14),
+            gitBranch: nullableText(statement, 15),
+            gitOriginURL: nullableText(statement, 16),
+            cliVersion: text(statement, 17),
+            firstUserMessage: text(statement, 18),
+            agentNickname: nullableText(statement, 19),
+            agentRole: nullableText(statement, 20),
+            memoryMode: text(statement, 21),
+            model: nullableText(statement, 22),
+            reasoningEffort: nullableText(statement, 23),
+            agentPath: nullableText(statement, 24),
+            createdAtMs: int64(statement, 25),
+            updatedAtMs: int64(statement, 26),
+            threadSource: nullableText(statement, 27),
+            preview: text(statement, 28)
+        )
+    }
+
+    private func insertFullThreadRecord(_ record: ThreadSQLiteRecord) throws {
+        let existing = try Shell.run(
+            "/usr/bin/sqlite3",
+            [stateDB.path, "select count(*) from threads where id = '\(sql(record.id))';"]
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard existing == "0" else {
+            throw WakeError.commandFailed("Thread metadata already exists in Codex state database.")
+        }
+
+        let statementSQL = """
+        insert into threads (
+            id, rollout_path, created_at, updated_at, source, model_provider, cwd, title,
+            sandbox_policy, approval_mode, tokens_used, has_user_event, archived, archived_at,
+            git_sha, git_branch, git_origin_url, cli_version, first_user_message,
+            agent_nickname, agent_role, memory_mode, model, reasoning_effort, agent_path,
+            created_at_ms, updated_at_ms, thread_source, preview
+        ) values (
+            \(sqlValue(record.id)),
+            \(sqlValue(record.rolloutPath)),
+            \(record.createdAt),
+            \(record.updatedAt),
+            \(sqlValue(record.source)),
+            \(sqlValue(record.modelProvider)),
+            \(sqlValue(record.cwd)),
+            \(sqlValue(record.title)),
+            \(sqlValue(record.sandboxPolicy)),
+            \(sqlValue(record.approvalMode)),
+            \(record.tokensUsed),
+            \(record.hasUserEvent),
+            \(record.archived),
+            \(sqlValue(record.archivedAt)),
+            \(sqlValue(record.gitSHA)),
+            \(sqlValue(record.gitBranch)),
+            \(sqlValue(record.gitOriginURL)),
+            \(sqlValue(record.cliVersion)),
+            \(sqlValue(record.firstUserMessage)),
+            \(sqlValue(record.agentNickname)),
+            \(sqlValue(record.agentRole)),
+            \(sqlValue(record.memoryMode)),
+            \(sqlValue(record.model)),
+            \(sqlValue(record.reasoningEffort)),
+            \(sqlValue(record.agentPath)),
+            \(sqlValue(record.createdAtMs)),
+            \(sqlValue(record.updatedAtMs)),
+            \(sqlValue(record.threadSource)),
+            \(sqlValue(record.preview))
+        );
+        """
+        _ = try Shell.run("/usr/bin/sqlite3", [stateDB.path, statementSQL])
     }
 
     private func updateSessionIndex(threadID: String, updatedAt: String) throws {
@@ -811,6 +1119,23 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
         try (lines.joined(separator: "\n") + "\n").write(to: sessionIndex, atomically: true, encoding: .utf8)
     }
 
+    private func removeSessionIndexEntry(threadID: String) throws {
+        guard fileManager.fileExists(atPath: sessionIndex.path) else { return }
+        let text = try String(contentsOf: sessionIndex, encoding: .utf8)
+        var lines: [String] = []
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            if line.isEmpty { continue }
+            guard let data = String(line).data(using: .utf8),
+                  let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  obj["id"] as? String == threadID
+            else {
+                lines.append(String(line))
+                continue
+            }
+        }
+        try (lines.joined(separator: "\n") + "\n").write(to: sessionIndex, atomically: true, encoding: .utf8)
+    }
+
     private func appendSessionIndex(threadID: String, title: String, updatedAt: String) throws {
         guard fileManager.fileExists(atPath: sessionIndex.path) else { return }
         let obj: [String: String] = [
@@ -818,6 +1143,30 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
             "thread_name": title,
             "updated_at": updatedAt
         ]
+        let encoded = try JSONSerialization.data(withJSONObject: obj, options: [])
+        guard let line = String(data: encoded, encoding: .utf8) else {
+            throw WakeError.invalidJSON("Cannot encode session index line")
+        }
+        let existing = try String(contentsOf: sessionIndex, encoding: .utf8)
+        let separator = existing.hasSuffix("\n") || existing.isEmpty ? "" : "\n"
+        let handle = try FileHandle(forWritingTo: sessionIndex)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        if let data = (separator + line + "\n").data(using: .utf8) {
+            try handle.write(contentsOf: data)
+        }
+    }
+
+    private func appendSessionIndexEntry(_ entry: SessionIndexEntry) throws {
+        guard fileManager.fileExists(atPath: sessionIndex.path) else { return }
+        if try loadSessionIndex()[entry.id] != nil { return }
+        var obj: [String: String] = ["id": entry.id]
+        if let threadName = entry.thread_name {
+            obj["thread_name"] = threadName
+        }
+        if let updatedAt = entry.updated_at {
+            obj["updated_at"] = updatedAt
+        }
         let encoded = try JSONSerialization.data(withJSONObject: obj, options: [])
         guard let line = String(data: encoded, encoding: .utf8) else {
             throw WakeError.invalidJSON("Cannot encode session index line")
@@ -1020,6 +1369,16 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
         value.replacingOccurrences(of: "'", with: "''")
     }
 
+    private func sqlValue(_ value: String?) -> String {
+        guard let value else { return "NULL" }
+        return "'\(sql(value))'"
+    }
+
+    private func sqlValue(_ value: Int64?) -> String {
+        guard let value else { return "NULL" }
+        return "\(value)"
+    }
+
     private func backupStamp() -> String {
         let formatter = DateFormatter()
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
@@ -1045,10 +1404,54 @@ private struct ThreadRow: Decodable {
     let updated_at_ms: Int64?
 }
 
-private struct SessionIndexEntry: Decodable {
+private struct SessionIndexEntry: Codable {
     let id: String
     let thread_name: String?
     let updated_at: String?
+}
+
+private struct TrashedThreadManifest: Codable {
+    let version: Int
+    let threadID: String
+    let title: String
+    let originalPath: String
+    let trashPath: String?
+    let cwd: String
+    let trashedAt: String
+    let sqliteRecord: ThreadSQLiteRecord
+    let sessionIndexEntry: SessionIndexEntry?
+}
+
+private struct ThreadSQLiteRecord: Codable {
+    let id: String
+    let rolloutPath: String
+    let createdAt: Int64
+    let updatedAt: Int64
+    let source: String
+    let modelProvider: String
+    let cwd: String
+    let title: String
+    let sandboxPolicy: String
+    let approvalMode: String
+    let tokensUsed: Int64
+    let hasUserEvent: Int64
+    let archived: Int64
+    let archivedAt: Int64?
+    let gitSHA: String?
+    let gitBranch: String?
+    let gitOriginURL: String?
+    let cliVersion: String
+    let firstUserMessage: String
+    let agentNickname: String?
+    let agentRole: String?
+    let memoryMode: String
+    let model: String?
+    let reasoningEffort: String?
+    let agentPath: String?
+    let createdAtMs: Int64?
+    let updatedAtMs: Int64?
+    let threadSource: String?
+    let preview: String
 }
 
 private struct SessionMetaLine: Decodable {

@@ -50,14 +50,14 @@ struct ProjectSidebarView: View {
                 .help("View Codex Wake backup files")
             }
 
-            if !model.backupTrash.isEmpty {
+            if model.trashItemCount > 0 {
                 Button {
                     model.showBackupTrash()
                 } label: {
                     BackupSidebarRow(
                         title: "Trash",
                         systemImage: "trash",
-                        count: model.backupTrash.count,
+                        count: model.trashItemCount,
                         totalSize: model.backupTrashTotalSizeText,
                         isSelected: model.selectedSection == .backupTrash,
                         accentColor: .red

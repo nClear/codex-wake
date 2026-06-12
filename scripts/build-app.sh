@@ -5,12 +5,18 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="Codex Wake"
 BINARY_NAME="CodexWake"
 CONFIGURATION="${1:-release}"
+SCRATCH_PATH="${CODEX_WAKE_SCRATCH_PATH:-}"
 
 cd "$ROOT_DIR"
 
-swift build -c "$CONFIGURATION"
+if [[ -n "$SCRATCH_PATH" ]]; then
+  swift build -c "$CONFIGURATION" --scratch-path "$SCRATCH_PATH"
+  BUILD_DIR="$SCRATCH_PATH/$(uname -m)-apple-macosx/$CONFIGURATION"
+else
+  swift build -c "$CONFIGURATION"
+  BUILD_DIR="$ROOT_DIR/.build/$CONFIGURATION"
+fi
 
-BUILD_DIR="$ROOT_DIR/.build/$CONFIGURATION"
 APP_DIR="$ROOT_DIR/dist/$APP_NAME.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"

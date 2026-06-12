@@ -5,8 +5,95 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
     private let lock = NSLock()
     private var movedProjects: [String: String] = [:]
     private var trashedBackupIDs = Set<String>()
+    private var trashedThreadIDs = Set<String>()
+    private var permanentlyDeletedThreadIDs = Set<String>()
 
     func loadThreads() throws -> [CodexThread] {
+        let projects = [
+            ("/Users/demo/projects/sample-app", "sample-app"),
+            ("/Users/demo/projects/design-system", "design-system"),
+            ("/Users/demo/projects/docs-workflow", "docs-workflow"),
+            ("/Users/demo/projects/release-tools", "release-tools")
+        ]
+
+        let rows: [(String, String, String, Int, Bool)] = [
+            ("Fix disappearing sidebar threads", "Investigate why older chats vanish from the sidebar and build a safer local recovery workflow.", projects[0].0, 4, true),
+            ("Design release screenshot", "Prepare a clean public screenshot with sample data and no private chat content.", projects[0].0, 16, false),
+            ("Add demo mode for screenshots", "Create a launch mode that renders realistic sample projects without reading ~/.codex.", projects[0].0, 26, false),
+            ("Review onboarding empty state", "Tighten the first-run layout so new users understand what the app can read locally.", projects[1].0, 9 * 24, true),
+            ("Compare search result states", "Check hidden, shown, archived, and missing-file rows before publishing the release notes.", projects[1].0, 11 * 24, true),
+            ("Plan documentation flow", "Sketch the README structure, install steps, privacy notes, and release download path.", projects[2].0, 42, false),
+            ("Clean up transcript preview", "Tune message parsing, timestamps, and long-text wrapping for readable chat previews.", projects[2].0, 13 * 24, true),
+            ("Prepare signed release", "Build, sign, notarize, and package the macOS app for the first public release.", projects[3].0, 3 * 24, false),
+            ("Render social preview image", "Create a repository preview image that shows the product clearly without leaking real data.", projects[3].0, 18 * 24, true)
+        ]
+
+        let overrides = movedProjectSnapshot()
+        let trashedThreads = trashedThreadSnapshot()
+        let deletedThreads = permanentlyDeletedThreadSnapshot()
+        return rows.enumerated().compactMap { index, row in
+            let id = "demo-thread-\(String(format: "%03d", index + 1))"
+            guard !trashedThreads.contains(id), !deletedThreads.contains(id) else { return nil }
+            let cwd = overrides[id] ?? row.2
+            let updatedAt = baseDate.addingTimeInterval(-Double(row.3) * 60 * 60)
+            let createdAt = updatedAt.addingTimeInterval(-Double(2 + index) * 60 * 60)
+            return CodexThread(
+                id: id,
+                rolloutPath: "/demo/codex-wake/sample-thread-\(index + 1).jsonl",
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                createdAtMs: createdAt,
+                updatedAtMs: updatedAt,
+                source: "codex",
+                threadSource: row.4 ? "assistant" : "user",
+                hasUserEvent: true,
+                archived: false,
+                title: row.0,
+                sessionIndexTitle: row.0,
+                firstUserMessage: row.1,
+                preview: samplePreview(title: row.0),
+                cwd: cwd,
+                isInSessionIndex: !row.4,
+                sessionIndexUpdatedAt: row.4 ? nil : updatedAt,
+                sessionMetaTimestamp: updatedAt,
+                sessionPayloadTimestamp: updatedAt,
+                fileExists: true
+            )
+        }
+        .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    func loadBackups() throws -> [BackupFile] {
+        return demoBackupSamples()
+            .filter { !trashedBackupSnapshot().contains($0.id) }
+    }
+
+    func loadBackupTrash() throws -> [BackupFile] {
+        demoBackupSamples()
+            .filter { trashedBackupSnapshot().contains($0.id) }
+    }
+
+    func loadThreadTrash() throws -> [TrashedThread] {
+        let trashedThreads = trashedThreadSnapshot()
+        let deletedThreads = permanentlyDeletedThreadSnapshot()
+        return loadThreadsIncludingTrashed()
+            .filter { trashedThreads.contains($0.id) && !deletedThreads.contains($0.id) }
+            .map { thread in
+                TrashedThread(
+                    threadID: thread.id,
+                    title: thread.shortTitle,
+                    originalPath: thread.rolloutPath,
+                    trashPath: "/Users/demo/.codex/.codex-wake-trash/threads/\(thread.id)/\(URL(fileURLWithPath: thread.rolloutPath).lastPathComponent)",
+                    manifestPath: "/Users/demo/.codex/.codex-wake-trash/threads/\(thread.id)/manifest.json",
+                    cwd: thread.cwd,
+                    trashedAt: baseDate,
+                    size: 128_000,
+                    originalExists: false
+                )
+            }
+    }
+
+    private func loadThreadsIncludingTrashed() -> [CodexThread] {
         let projects = [
             ("/Users/demo/projects/sample-app", "sample-app"),
             ("/Users/demo/projects/design-system", "design-system"),
@@ -56,16 +143,6 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
             )
         }
         .sorted { $0.updatedAt > $1.updatedAt }
-    }
-
-    func loadBackups() throws -> [BackupFile] {
-        return demoBackupSamples()
-            .filter { !trashedBackupSnapshot().contains($0.id) }
-    }
-
-    func loadBackupTrash() throws -> [BackupFile] {
-        demoBackupSamples()
-            .filter { trashedBackupSnapshot().contains($0.id) }
     }
 
     private func demoBackupSamples() -> [BackupFile] {
@@ -202,6 +279,37 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
         )
     }
 
+    func moveThreadToTrash(_ thread: CodexThread) throws -> TrashThreadReport {
+        lock.lock()
+        trashedThreadIDs.insert(thread.id)
+        permanentlyDeletedThreadIDs.remove(thread.id)
+        lock.unlock()
+
+        return TrashThreadReport(
+            threadID: thread.id,
+            title: thread.shortTitle,
+            rolloutPath: thread.rolloutPath,
+            trashedPath: "/Users/demo/.codex/.codex-wake-trash/threads/\(thread.id)/\(URL(fileURLWithPath: thread.rolloutPath).lastPathComponent)",
+            timestamp: "demo",
+            backups: ["Demo mode does not read or write local Codex files."],
+            changedFiles: []
+        )
+    }
+
+    func restoreTrashedThread(_ thread: TrashedThread) throws {
+        lock.lock()
+        trashedThreadIDs.remove(thread.threadID)
+        permanentlyDeletedThreadIDs.remove(thread.threadID)
+        lock.unlock()
+    }
+
+    func deleteTrashedThreadPermanently(_ thread: TrashedThread) throws {
+        lock.lock()
+        permanentlyDeletedThreadIDs.insert(thread.threadID)
+        trashedThreadIDs.remove(thread.threadID)
+        lock.unlock()
+    }
+
     func restoreBackup(_ backup: BackupFile) throws {
         guard backup.kind == .chatFile else {
             throw WakeError.commandFailed("Only chat file backups can be restored.")
@@ -222,6 +330,15 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
         return count
     }
 
+    func emptyThreadTrash() throws -> Int {
+        lock.lock()
+        let count = trashedThreadIDs.count
+        permanentlyDeletedThreadIDs.formUnion(trashedThreadIDs)
+        trashedThreadIDs.removeAll()
+        lock.unlock()
+        return count
+    }
+
     private func samplePreview(title: String) -> String {
         "Preview for \(title): synthetic chat content for public screenshots, documentation, and safe UI testing."
     }
@@ -236,6 +353,18 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return trashedBackupIDs
+    }
+
+    private func trashedThreadSnapshot() -> Set<String> {
+        lock.lock()
+        defer { lock.unlock() }
+        return trashedThreadIDs
+    }
+
+    private func permanentlyDeletedThreadSnapshot() -> Set<String> {
+        lock.lock()
+        defer { lock.unlock() }
+        return permanentlyDeletedThreadIDs
     }
 
     private func demoBackupStamp(_ date: Date) -> String {

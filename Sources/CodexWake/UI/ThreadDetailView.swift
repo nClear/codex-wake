@@ -5,6 +5,7 @@ struct ThreadDetailView: View {
     @State private var isMoveSheetPresented = false
     @State private var pendingTrimMessage: PreviewMessage?
     @State private var pendingBranchMessage: PreviewMessage?
+    @State private var isTrashConfirmationPresented = false
 
     var body: some View {
         Group {
@@ -50,6 +51,14 @@ struct ThreadDetailView: View {
             }
         } message: {
             Text("This creates a new Codex chat with the conversation history before this Codex turn. The original chat is not changed.")
+        }
+        .alert("Move chat to Trash?", isPresented: $isTrashConfirmationPresented) {
+            Button("Move to Trash", role: .destructive) {
+                Task { await model.moveSelectedThreadToTrash() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This moves the chat JSONL file to macOS Trash when it exists, removes the chat from Codex metadata, and creates safety backups for local state files first.")
         }
     }
 
@@ -129,6 +138,15 @@ struct ThreadDetailView: View {
             }
             .buttonStyle(.bordered)
             .disabled(model.isDemoMode)
+
+            Button(role: .destructive) {
+                isTrashConfirmationPresented = true
+            } label: {
+                Label("Move to Trash", systemImage: "trash")
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.isLoading)
+            .help("Move this chat file to macOS Trash and remove it from Codex metadata")
         }
     }
 

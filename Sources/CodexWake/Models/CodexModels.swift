@@ -204,6 +204,17 @@ struct MoveReport: Identifiable {
     let changedFiles: [String]
 }
 
+struct TrashThreadReport: Identifiable {
+    let id = UUID()
+    let threadID: String
+    let title: String
+    let rolloutPath: String
+    let trashedPath: String?
+    let timestamp: String
+    let backups: [String]
+    let changedFiles: [String]
+}
+
 struct BatchWakeReport: Identifiable {
     let id = UUID()
     let completedAt: Date
@@ -256,6 +267,20 @@ struct BackupFile: Identifiable, Hashable {
     let originalExists: Bool
     let chatTitle: String?
     let reason: String
+}
+
+struct TrashedThread: Identifiable, Hashable {
+    var id: String { threadID }
+
+    let threadID: String
+    let title: String
+    let originalPath: String
+    let trashPath: String?
+    let manifestPath: String
+    let cwd: String
+    let trashedAt: Date?
+    let size: Int64
+    let originalExists: Bool
 }
 
 enum BackupKind: String, Hashable {

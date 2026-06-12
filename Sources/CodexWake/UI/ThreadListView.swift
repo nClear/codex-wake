@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ThreadListView: View {
     @EnvironmentObject private var model: AppModel
+    @State private var pendingTrashThread: CodexThread?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -107,6 +108,13 @@ struct ThreadListView: View {
                             Label("Reveal", systemImage: "folder")
                         }
                         .disabled(model.isDemoMode)
+
+                        Button(role: .destructive) {
+                            pendingTrashThread = thread
+                        } label: {
+                            Label("Move to Trash", systemImage: "trash")
+                        }
+                        .disabled(model.isLoading)
                     }
                 }
             }
@@ -125,6 +133,43 @@ struct ThreadListView: View {
         } message: {
             Text(model.batchWakeSuccessMessage ?? "")
         }
+        .alert("Move chat to Trash?", isPresented: isTrashThreadConfirmationPresented) {
+            Button("Move to Trash", role: .destructive) {
+                guard let thread = pendingTrashThread else { return }
+                model.selectThread(thread)
+                pendingTrashThread = nil
+                Task { await model.moveSelectedThreadToTrash() }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingTrashThread = nil
+            }
+        } message: {
+            Text("This moves the chat JSONL file to macOS Trash when it exists, removes the chat from Codex metadata, and creates safety backups for local state files first.")
+        }
+        .alert(
+            "Move to Trash complete",
+            isPresented: Binding(
+                get: { model.batchTrashSuccessMessage != nil },
+                set: { if !$0 { model.batchTrashSuccessMessage = nil } }
+            )
+        ) {
+            Button("OK") {
+                model.batchTrashSuccessMessage = nil
+            }
+        } message: {
+            Text(model.batchTrashSuccessMessage ?? "")
+        }
+    }
+
+    private var isTrashThreadConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { pendingTrashThread != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingTrashThread = nil
+                }
+            }
+        )
     }
 }
 
@@ -149,6 +194,7 @@ private struct ThreadSelectionEntryToolbar: View {
 private struct ThreadSelectionToolbar: View {
     @EnvironmentObject private var model: AppModel
     @State private var isWakeConfirmationPresented = false
+    @State private var isTrashConfirmationPresented = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -183,6 +229,15 @@ private struct ThreadSelectionToolbar: View {
             .buttonStyle(.bordered)
             .disabled(model.isDemoMode || model.selectedThreadIDs.isEmpty)
 
+            Button(role: .destructive) {
+                isTrashConfirmationPresented = true
+            } label: {
+                Label("Move to Trash", systemImage: "trash")
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.isLoading || model.selectedThreadIDs.isEmpty)
+            .help("Move selected chat files to macOS Trash and remove them from Codex metadata")
+
             Button {
                 model.cancelThreadSelection()
             } label: {
@@ -201,6 +256,14 @@ private struct ThreadSelectionToolbar: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Codex Wake will run the same single-chat Wake operation for each writable selected chat and create backups for each operation. \(model.selectedWakeSkippedCount) archived or missing chats will be skipped.")
+        }
+        .alert("Move \(model.selectedThreadIDs.count) selected chats to Trash?", isPresented: $isTrashConfirmationPresented) {
+            Button("Move to Trash", role: .destructive) {
+                Task { await model.moveSelectedThreadsToTrash() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Codex Wake will move existing chat JSONL files to macOS Trash, remove selected chats from Codex metadata, and create safety backups for local state files first. Missing chat files will be cleaned from metadata only.")
         }
     }
 }

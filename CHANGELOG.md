@@ -2,6 +2,13 @@
 
 All notable changes to Codex Wake are documented here.
 
+## 0.1.5 - 2026-06-12
+
+- Added safe **Move to Trash** support for chats, including selected chats.
+- Moving a chat to Trash removes it from Codex metadata and moves the JSONL file into Codex Wake's own app trash when the file still exists.
+- Added trashed chat restore and permanent delete actions in the **Trash** section.
+- Missing chat files can now be cleaned from Codex metadata so empty/deleted projects disappear after refresh.
+
 ## 0.1.4 - 2026-06-05
 
 - Added **Trim from here** for cutting a local chat back to an earlier user message, with a backup created first.
