@@ -8,6 +8,7 @@ All notable changes to Codex Wake are documented here.
 - Moving a chat to Trash removes it from Codex metadata and moves the JSONL file into Codex Wake's own app trash when the file still exists.
 - Added trashed chat restore and permanent delete actions in the **Trash** section.
 - Missing chat files can now be cleaned from Codex metadata so empty/deleted projects disappear after refresh.
+- Added optional `CODEX_WAKE_SCRATCH_PATH` support to the app build script for clean Swift builds.
 
 ## 0.1.4 - 2026-06-05
 

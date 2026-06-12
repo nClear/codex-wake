@@ -4,7 +4,7 @@ Codex Desktop currently hides chats older than about one week from the sidebar, 
 
 Another common pain: useful chats can end up attached to the wrong project, which makes them hard to find in the right workspace later.
 
-Codex Wake is an unofficial local macOS app for browsing, searching, waking, moving, and backing up Codex chats. It reads the local Codex data directory, shows chats grouped by project, supports metadata search and optional deep search through JSONL transcripts, can "wake" old chats so they appear again in the Codex sidebar, can move a chat from one known project to another, and provides a local backup manager.
+Codex Wake is an unofficial local macOS app for browsing, searching, waking, moving, trashing, restoring, and backing up Codex chats. It reads the local Codex data directory, shows chats grouped by project, supports metadata search and optional deep search through JSONL transcripts, can "wake" old chats so they appear again in the Codex sidebar, can move a chat from one known project to another, can move unwanted chats into its own restoreable app trash, and provides a local backup manager.
 
 ![Codex Wake screenshot](assets/screenshot.png)
 
@@ -23,13 +23,12 @@ To install it:
 3. Move `Codex Wake.app` to `/Applications`.
 4. Open it.
 
-## Latest In 0.1.4
+## Latest In 0.1.5
 
-- **Trim from here** for safely cutting a local chat back to an earlier point.
-- **Branch from here** for creating a new chat from an earlier turn without changing the original.
-- Chat backup restore from the Backup Manager.
-- Full-chat preview loading with turn-aware branch points.
-- Adaptive dark mode colors.
+- **Move to Trash** for safely removing selected chats from Codex metadata.
+- Codex Wake's own app trash for trashed chats, stored under `~/.codex/.codex-wake-trash/threads/`.
+- Restore and permanent delete actions for trashed chats.
+- Metadata-only cleanup for missing chat files, so deleted projects can disappear after refresh.
 
 ## Demo Mode
 
@@ -55,6 +54,8 @@ CODEX_WAKE_DEMO=1 "dist/Codex Wake.app/Contents/MacOS/CodexWake"
 - Wake multiple selected threads.
 - Move a thread between known projects by updating its local project metadata.
 - Move a thread to Codex Wake's app trash and remove it from local Codex metadata.
+- Restore a trashed thread from Codex Wake's app trash.
+- Permanently delete trashed threads after confirmation.
 - Trim a thread from a selected user message, with a backup created first.
 - Create a branch thread from a selected turn without changing the original.
 - Create backups before every wake operation.
@@ -112,6 +113,8 @@ When you move a selected thread to Trash, Codex Wake creates timestamped backups
 - the thread JSONL file, moved to `~/.codex/.codex-wake-trash/threads/` when it still exists
 
 If the chat JSONL file is already missing, Codex Wake cleans the metadata only. This is useful for removing projects that still appear in Codex Wake after their local chat files were deleted elsewhere.
+
+Each trashed chat gets a `manifest.json` file with the original path, thread id, project path, saved SQLite row, and session index entry needed for restore.
 
 Trashed chats appear in the **Trash** section. From there you can restore a chat, reveal or copy the trashed file path, copy the original path, or permanently delete it.
 
