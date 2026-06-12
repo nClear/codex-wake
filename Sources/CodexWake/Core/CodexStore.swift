@@ -710,7 +710,7 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
             return "Created before Restore"
         }
         if stamp.contains("-wake") {
-            return "Created before Wake"
+            return "Created before Repair Index"
         }
         if stamp.contains("-move") {
             return "Created before Move"

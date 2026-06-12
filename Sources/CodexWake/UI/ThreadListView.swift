@@ -86,9 +86,9 @@ struct ThreadListView: View {
                             model.selectThread(thread)
                             Task { await model.wakeSelectedThread() }
                         } label: {
-                            Label("Wake", systemImage: "alarm")
+                            Label("Repair Index", systemImage: "wrench.and.screwdriver")
                         }
-                        .disabled(model.isDemoMode || model.isLoading || thread.archived || !thread.fileExists)
+                        .disabled(model.isDemoMode || model.isLoading || !thread.needsRepair)
 
                         Button {
                             model.selectThread(thread)
@@ -121,7 +121,7 @@ struct ThreadListView: View {
             .listStyle(.plain)
         }
         .alert(
-            "Wake complete",
+            "Repair complete",
             isPresented: Binding(
                 get: { model.batchWakeSuccessMessage != nil },
                 set: { if !$0 { model.batchWakeSuccessMessage = nil } }
@@ -193,7 +193,7 @@ private struct ThreadSelectionEntryToolbar: View {
 
 private struct ThreadSelectionToolbar: View {
     @EnvironmentObject private var model: AppModel
-    @State private var isWakeConfirmationPresented = false
+    @State private var isRepairConfirmationPresented = false
     @State private var isTrashConfirmationPresented = false
 
     var body: some View {
@@ -205,13 +205,13 @@ private struct ThreadSelectionToolbar: View {
             Spacer()
 
             Button {
-                isWakeConfirmationPresented = true
+                isRepairConfirmationPresented = true
             } label: {
-                Label("Wake", systemImage: "alarm")
+                Label("Repair Index", systemImage: "wrench.and.screwdriver")
             }
             .buttonStyle(.borderedProminent)
-            .disabled(model.isDemoMode || model.isLoading || model.selectedWakeableCount == 0)
-            .help("Wake selected chats")
+            .disabled(model.isDemoMode || model.isLoading || model.selectedRepairableCount == 0)
+            .help("Repair selected chats missing from session_index.jsonl")
 
             Button {
                 model.copySelectedThreadPaths()
@@ -249,13 +249,13 @@ private struct ThreadSelectionToolbar: View {
         .padding(8)
         .frame(height: 36)
         .background(WakeColors.reportBackground(.accentColor), in: RoundedRectangle(cornerRadius: 8))
-        .alert("Wake \(model.selectedWakeableCount) selected chats?", isPresented: $isWakeConfirmationPresented) {
-            Button("Wake") {
+        .alert("Repair \(model.selectedRepairableCount) selected chats?", isPresented: $isRepairConfirmationPresented) {
+            Button("Repair Index") {
                 Task { await model.wakeSelectedThreads() }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Codex Wake will run the same single-chat Wake operation for each writable selected chat and create backups for each operation. \(model.selectedWakeSkippedCount) archived or missing chats will be skipped.")
+            Text("Codex Wake will refresh Codex metadata for selected chats missing from session_index.jsonl and create backups for each operation. \(model.selectedRepairSkippedCount) already available, archived, or missing chats will be skipped.")
         }
         .alert("Move \(model.selectedThreadIDs.count) selected chats to Trash?", isPresented: $isTrashConfirmationPresented) {
             Button("Move to Trash", role: .destructive) {
@@ -345,7 +345,7 @@ private struct StatusPill: View {
 
     private var color: Color {
         if thread.archived || !thread.fileExists { return .red }
-        if thread.needsWake { return .orange }
+        if thread.needsRepair { return .orange }
         return .green
     }
 
@@ -357,11 +357,8 @@ private struct StatusPill: View {
             return "The chat file referenced by Codex metadata is missing on disk."
         }
         if !thread.isInSessionIndex {
-            return "This thread is missing from session_index.jsonl. Wake updates Codex metadata so it can appear in the sidebar again."
+            return "This thread is missing from session_index.jsonl. Repair Index refreshes Codex metadata after creating backups."
         }
-        if thread.needsWake {
-            return "Codex may hide this thread from the sidebar because its latest message is older than one week. Wake updates its timestamp."
-        }
-        return "This thread is recent and present in Codex's session index."
+        return "This thread is available in Codex metadata."
     }
 }

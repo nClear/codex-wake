@@ -134,10 +134,10 @@ private struct ProjectRow: View {
                     .font(.caption)
             }
             HStack(spacing: 8) {
-                Label("\(project.shownCount)", systemImage: "checkmark.circle.fill")
+                Label("\(project.availableCount)", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
-                if project.hiddenCount > 0 {
-                    Label("\(project.hiddenCount)", systemImage: "clock.badge.exclamationmark")
+                if project.repairCount > 0 {
+                    Label("\(project.repairCount)", systemImage: "wrench.and.screwdriver")
                         .foregroundStyle(.orange)
                 }
             }

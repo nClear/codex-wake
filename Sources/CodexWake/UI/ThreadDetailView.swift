@@ -104,11 +104,11 @@ struct ThreadDetailView: View {
             Button {
                 Task { await model.wakeSelectedThread() }
             } label: {
-                Label("Wake", systemImage: "alarm")
+                Label("Repair Index", systemImage: "wrench.and.screwdriver")
             }
             .buttonStyle(.borderedProminent)
-            .disabled(model.isLoading || thread.archived || !thread.fileExists)
-            .help(model.isDemoMode ? "Show a demo wake report without changing local files" : "Back up metadata, update dates, and make the chat recent in Codex App")
+            .disabled(model.isLoading || (!model.isDemoMode && !thread.needsRepair))
+            .help(model.isDemoMode ? "Show a demo repair report without changing local files" : "Back up metadata and repair missing session_index.jsonl metadata")
 
             Button {
                 isMoveSheetPresented = true
@@ -154,7 +154,7 @@ struct ThreadDetailView: View {
     private var wakeReport: some View {
         if let report = model.selectedWakeReport {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Wake complete @ \(WakeDates.displayBackupStamp(report.timestamp))")
+                Text("Repair complete @ \(WakeDates.displayBackupStamp(report.timestamp))")
                     .font(.headline)
                 Text("Backups")
                     .font(.caption.weight(.semibold))

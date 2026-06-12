@@ -63,16 +63,16 @@ final class AppModel: ObservableObject {
             }
     }
 
-    var wakeableSelectedThreads: [CodexThread] {
-        selectedThreads.filter { !$0.archived && $0.fileExists }
+    var repairableSelectedThreads: [CodexThread] {
+        selectedThreads.filter(\.needsRepair)
     }
 
-    var selectedWakeableCount: Int {
-        wakeableSelectedThreads.count
+    var selectedRepairableCount: Int {
+        repairableSelectedThreads.count
     }
 
-    var selectedWakeSkippedCount: Int {
-        selectedThreads.count - wakeableSelectedThreads.count
+    var selectedRepairSkippedCount: Int {
+        selectedThreads.count - repairableSelectedThreads.count
     }
 
     var selectedBackup: BackupFile? {
@@ -288,19 +288,22 @@ final class AppModel: ObservableObject {
             if !thread.fileExists {
                 return BatchWakeSkipped(threadID: thread.id, title: thread.shortTitle, reason: "Missing file")
             }
+            if thread.isInSessionIndex {
+                return BatchWakeSkipped(threadID: thread.id, title: thread.shortTitle, reason: "Already available")
+            }
             return nil
         }
-        let candidates = selected.filter { !$0.archived && $0.fileExists }
+        let candidates = selected.filter(\.needsRepair)
 
         guard !candidates.isEmpty else {
-            batchWakeSuccessMessage = "No selected chats can be woken. Skipped \(skipped.count)."
-            status = "No selected chats can be woken"
+            batchWakeSuccessMessage = "No selected chats need index repair. Skipped \(skipped.count)."
+            status = "No selected chats need repair"
             clearThreadSelection()
             return
         }
 
         isLoading = true
-        status = "Waking \(candidates.count) selected chats..."
+        status = "Repairing index for \(candidates.count) selected chats..."
         errorMessage = nil
         wakeReport = nil
         moveReport = nil
@@ -343,8 +346,8 @@ final class AppModel: ObservableObject {
             )
         }.value
 
-        batchWakeSuccessMessage = "Woke \(report.succeeded.count) chats. Skipped \(report.skipped.count), failed \(report.failed.count)."
-        status = "Batch wake complete: \(report.succeeded.count) ok, \(report.failed.count) failed"
+        batchWakeSuccessMessage = "Repaired \(report.succeeded.count) chats. Skipped \(report.skipped.count), failed \(report.failed.count)."
+        status = "Batch repair complete: \(report.succeeded.count) ok, \(report.failed.count) failed"
         await refresh()
         selectedThreadID = firstSelectedID
         clearThreadSelection()
@@ -641,6 +644,10 @@ final class AppModel: ObservableObject {
 
     func wakeSelectedThread() async {
         guard let thread = selectedThread else { return }
+        guard thread.needsRepair || isDemoMode else {
+            status = "No index repair needed"
+            return
+        }
         guard !isDemoMode else {
             wakeReport = WakeReport(
                 threadID: thread.id,
@@ -648,11 +655,11 @@ final class AppModel: ObservableObject {
                 backups: ["Demo mode does not change local Codex files."],
                 changedFiles: []
             )
-            status = "Demo wake complete"
+            status = "Demo repair complete"
             return
         }
         isLoading = true
-        status = "Waking chat..."
+        status = "Repairing chat index..."
         errorMessage = nil
         wakeReport = nil
         moveReport = nil
@@ -661,18 +668,18 @@ final class AppModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            let wokenThreadID = thread.id
+            let repairedThreadID = thread.id
             let report = try await Task.detached(priority: .userInitiated) {
                 try self.store.wake(thread: thread)
             }.value
             wakeReport = report
-            status = "Awake: \(thread.shortTitle)"
+            status = "Index repaired: \(thread.shortTitle)"
             await refresh()
-            selectedThreadID = wokenThreadID
-            await loadPreview(threadID: wokenThreadID)
+            selectedThreadID = repairedThreadID
+            await loadPreview(threadID: repairedThreadID)
         } catch {
             errorMessage = readable(error)
-            status = "Wake failed"
+            status = "Repair failed"
         }
     }
 

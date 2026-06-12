@@ -37,27 +37,21 @@ struct CodexThread: Identifiable, Hashable {
         URL(fileURLWithPath: cwd).lastPathComponent.isEmpty ? cwd : URL(fileURLWithPath: cwd).lastPathComponent
     }
 
-    var needsWake: Bool {
+    var needsRepair: Bool {
         if archived { return false }
         if !fileExists { return false }
-        if !isInSessionIndex { return true }
-        return !isRecentlyUpdated
+        return !isInSessionIndex
     }
 
-    var isShown: Bool {
-        !archived && fileExists && isInSessionIndex && isRecentlyUpdated
-    }
-
-    var isRecentlyUpdated: Bool {
-        Date().timeIntervalSince(updatedAt) < 7 * 24 * 60 * 60
+    var isAvailable: Bool {
+        !archived && fileExists && isInSessionIndex
     }
 
     var statusLabel: String {
         if archived { return "Archived" }
         if !fileExists { return "Missing file" }
         if !isInSessionIndex { return "Not indexed" }
-        if needsWake { return "Hidden" }
-        return "Shown"
+        return "Available"
     }
 
     func matchesMetadata(_ query: String) -> Bool {
@@ -74,14 +68,14 @@ struct CodexThread: Identifiable, Hashable {
 
 struct ProjectSummary: Identifiable, Hashable {
     static let allID = "__all__"
-    static let all = ProjectSummary(id: allID, name: "All Projects", path: "", totalCount: 0, hiddenCount: 0, shownCount: 0, latestUpdatedAt: nil)
+    static let all = ProjectSummary(id: allID, name: "All Projects", path: "", totalCount: 0, repairCount: 0, availableCount: 0, latestUpdatedAt: nil)
 
     let id: String
     let name: String
     let path: String
     let totalCount: Int
-    let hiddenCount: Int
-    let shownCount: Int
+    let repairCount: Int
+    let availableCount: Int
     let latestUpdatedAt: Date?
 
     static func make(from threads: [CodexThread], sort: ProjectSortMode = .recent) -> [ProjectSummary] {
@@ -92,8 +86,8 @@ struct ProjectSummary: Identifiable, Hashable {
                 name: URL(fileURLWithPath: cwd).lastPathComponent.isEmpty ? cwd : URL(fileURLWithPath: cwd).lastPathComponent,
                 path: cwd,
                 totalCount: items.count,
-                hiddenCount: items.filter(\.needsWake).count,
-                shownCount: items.filter(\.isShown).count,
+                repairCount: items.filter(\.needsRepair).count,
+                availableCount: items.filter(\.isAvailable).count,
                 latestUpdatedAt: items.map(\.updatedAt).max()
             )
         }
@@ -115,8 +109,8 @@ struct ProjectSummary: Identifiable, Hashable {
             name: "All Projects",
             path: "",
             totalCount: threads.count,
-            hiddenCount: threads.filter(\.needsWake).count,
-            shownCount: threads.filter(\.isShown).count,
+            repairCount: threads.filter(\.needsRepair).count,
+            availableCount: threads.filter(\.isAvailable).count,
             latestUpdatedAt: threads.map(\.updatedAt).max()
         )
         return [all] + projects

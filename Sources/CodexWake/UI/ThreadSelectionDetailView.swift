@@ -29,8 +29,8 @@ struct ThreadSelectionDetailView: View {
 
     private var summary: some View {
         HStack(spacing: 10) {
-            SummaryPill(title: "Shown", value: selected.filter(\.isShown).count, color: .green)
-            SummaryPill(title: "Hidden", value: selected.filter(\.needsWake).count, color: .orange)
+            SummaryPill(title: "Available", value: selected.filter(\.isAvailable).count, color: .green)
+            SummaryPill(title: "Repair", value: selected.filter(\.needsRepair).count, color: .orange)
             SummaryPill(title: "Archived", value: selected.filter(\.archived).count, color: .red)
             SummaryPill(title: "Missing", value: selected.filter { !$0.fileExists }.count, color: .red)
         }
@@ -128,7 +128,7 @@ private struct SelectedThreadCard: View {
 
     private var statusColor: Color {
         if thread.archived || !thread.fileExists { return .red }
-        if thread.needsWake { return .orange }
+        if thread.needsRepair { return .orange }
         return .green
     }
 }
