@@ -67,7 +67,7 @@ struct BackupTrashListView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This permanently deletes \(model.threadTrash.count) trashed chats and \(model.backupTrash.count) backup files from Codex Wake's app trash. You will not be able to restore them after this action.")
+            Text("This permanently deletes \(model.threadTrash.count) trashed chats and \(model.backupTrash.count) backup files from Codex Keeper's app trash. You will not be able to restore them after this action.")
         }
     }
 }

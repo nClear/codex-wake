@@ -112,7 +112,7 @@ struct BackupDetailView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This moves the selected backup into Codex Wake's app trash. It will not be permanently deleted until you empty the app trash.")
+            Text("This moves the selected backup into Codex Keeper's app trash. It will not be permanently deleted until you empty the app trash.")
         }
     }
 

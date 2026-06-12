@@ -45,7 +45,7 @@ struct BackupTrashDetailView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This permanently deletes the trashed chat file and its restore manifest from Codex Wake's app trash.")
+            Text("This permanently deletes the trashed chat file and its restore manifest from Codex Keeper's app trash.")
         }
     }
 

@@ -6,7 +6,7 @@ struct ProjectSidebarView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Text("Codex Wake")
+                Text("Codex Keeper")
                     .font(.headline)
                 Spacer()
                 Button {
@@ -47,7 +47,7 @@ struct ProjectSidebarView: View {
                 .buttonStyle(.plain)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
-                .help("View Codex Wake backup files")
+                .help("View Codex Keeper backup files")
             }
 
             if model.trashItemCount > 0 {
@@ -66,7 +66,7 @@ struct ProjectSidebarView: View {
                 .buttonStyle(.plain)
                 .padding(.horizontal, 8)
                 .padding(.bottom, 6)
-                .help("View Codex Wake app trash")
+                .help("View Codex Keeper app trash")
             }
 
             List(selection: $model.selectedProjectID) {

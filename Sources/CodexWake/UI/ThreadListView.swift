@@ -255,7 +255,7 @@ private struct ThreadSelectionToolbar: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Codex Wake will refresh Codex metadata for selected chats missing from session_index.jsonl and create backups for each operation. \(model.selectedRepairSkippedCount) already available, archived, or missing chats will be skipped.")
+            Text("Codex Keeper will refresh Codex metadata for selected chats missing from session_index.jsonl and create backups for each operation. \(model.selectedRepairSkippedCount) already available, archived, or missing chats will be skipped.")
         }
         .alert("Move \(model.selectedThreadIDs.count) selected chats to Trash?", isPresented: $isTrashConfirmationPresented) {
             Button("Move to Trash", role: .destructive) {
@@ -263,7 +263,7 @@ private struct ThreadSelectionToolbar: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Codex Wake will move existing chat JSONL files to macOS Trash, remove selected chats from Codex metadata, and create safety backups for local state files first. Missing chat files will be cleaned from metadata only.")
+            Text("Codex Keeper will move existing chat JSONL files to app trash, remove selected chats from Codex metadata, and create safety backups for local state files first. Missing chat files will be cleaned from metadata only.")
         }
     }
 }

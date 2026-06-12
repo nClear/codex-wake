@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-APP_NAME="Codex Wake"
+APP_NAME="Codex Keeper"
 BINARY_NAME="CodexWake"
 CONFIGURATION="${1:-release}"
 SCRATCH_PATH="${CODEX_WAKE_SCRATCH_PATH:-}"

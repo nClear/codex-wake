@@ -171,7 +171,7 @@ final class DemoCodexStore: ThreadStore, @unchecked Sendable {
                 kind: kind,
                 originalExists: true,
                 chatTitle: kind == .chatFile ? "Fix disappearing sidebar threads" : nil,
-                reason: kind == .chatFile ? "Created before Trim from here" : "Created by Codex Wake"
+                reason: kind == .chatFile ? "Created before Trim from here" : "Created by Codex Keeper"
             )
         }
     }

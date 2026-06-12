@@ -177,7 +177,7 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
         guard source.path.hasPrefix(codexHome.standardizedFileURL.path + "/"),
               source.lastPathComponent.contains(".codex-rescue-backup-")
         else {
-            throw WakeError.commandFailed("Refusing to move non-Codex-Wake backup file")
+            throw WakeError.commandFailed("Refusing to move non-Codex Keeper backup file")
         }
 
         let sourceDirectory = source.deletingLastPathComponent()
@@ -200,7 +200,7 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
         guard backupURL.path.hasPrefix(codexHome.standardizedFileURL.path + "/"),
               backupURL.lastPathComponent.contains(".codex-rescue-backup-")
         else {
-            throw WakeError.commandFailed("Refusing to restore non-Codex-Wake backup file.")
+            throw WakeError.commandFailed("Refusing to restore non-Codex Keeper backup file.")
         }
         guard fileManager.fileExists(atPath: backupURL.path) else {
             throw WakeError.commandFailed("Backup file no longer exists.")
@@ -576,7 +576,7 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
     func restoreTrashedThread(_ thread: TrashedThread) throws {
         let manifestURL = URL(fileURLWithPath: thread.manifestPath).standardizedFileURL
         guard manifestURL.path.hasPrefix(threadTrash.standardizedFileURL.path + "/") else {
-            throw WakeError.commandFailed("Refusing to restore a chat outside Codex Wake trash.")
+            throw WakeError.commandFailed("Refusing to restore a chat outside Codex Keeper trash.")
         }
         let manifest = try JSONDecoder().decode(TrashedThreadManifest.self, from: Data(contentsOf: manifestURL))
         let originalURL = URL(fileURLWithPath: manifest.originalPath).standardizedFileURL
@@ -613,7 +613,7 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
     func deleteTrashedThreadPermanently(_ thread: TrashedThread) throws {
         let manifestURL = URL(fileURLWithPath: thread.manifestPath).standardizedFileURL
         guard manifestURL.path.hasPrefix(threadTrash.standardizedFileURL.path + "/") else {
-            throw WakeError.commandFailed("Refusing to delete a file outside Codex Wake trash.")
+            throw WakeError.commandFailed("Refusing to delete a file outside Codex Keeper trash.")
         }
         try deleteTrashDirectory(containing: manifestURL)
     }
@@ -718,7 +718,7 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
         if kind == .chatFile {
             return "Created before a chat change (legacy backup)"
         }
-        return "Created by Codex Wake"
+        return "Created by Codex Keeper"
     }
 
     private func isMainBackup(_ backup: BackupFile) -> Bool {
@@ -949,7 +949,7 @@ final class CodexStore: ThreadStore, @unchecked Sendable {
     private func deleteTrashDirectory(containing manifestURL: URL) throws {
         let directory = manifestURL.deletingLastPathComponent().standardizedFileURL
         guard directory.path.hasPrefix(threadTrash.standardizedFileURL.path + "/") else {
-            throw WakeError.commandFailed("Refusing to delete a file outside Codex Wake trash.")
+            throw WakeError.commandFailed("Refusing to delete a file outside Codex Keeper trash.")
         }
         try fileManager.removeItem(at: directory)
     }

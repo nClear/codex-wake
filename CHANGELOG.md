@@ -1,6 +1,14 @@
 # Changelog
 
-All notable changes to Codex Wake are documented here.
+All notable changes to Codex Keeper, formerly Codex Wake, are documented here.
+
+## 0.2.0 - 2026-06-12
+
+- Renamed the app from **Codex Wake** to **Codex Keeper**.
+- Added the new Codex Keeper app icon.
+- Updated the app bundle name, sidebar title, window title, README, release copy, and user-facing maintenance messages.
+- Kept the repository name `codex-wake`, bundle identifier `app.codexwake.CodexWake`, executable name `CodexWake`, and legacy `.codex-wake-trash` storage path for compatibility.
+- Positioned the app as a local Codex chat maintenance tool while preserving existing backup, trash, repair, trim, branch, and restore workflows.
 
 ## 0.1.6 - 2026-06-12
 

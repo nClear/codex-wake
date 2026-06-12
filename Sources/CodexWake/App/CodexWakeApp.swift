@@ -5,7 +5,7 @@ struct CodexWakeApp: App {
     @StateObject private var model = AppModel()
 
     var body: some Scene {
-        WindowGroup("Codex Wake") {
+        WindowGroup("Codex Keeper") {
             ContentView()
                 .environmentObject(model)
                 .frame(minWidth: 1080, minHeight: 720)
