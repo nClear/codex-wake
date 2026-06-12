@@ -2,6 +2,14 @@
 
 All notable changes to Codex Wake are documented here.
 
+## 0.1.6 - 2026-06-12
+
+- Updated chat availability behavior for Codex app 26.609, which now shows older chats directly in the sidebar.
+- Old chats are no longer marked hidden only because they are older than one week.
+- Replaced the primary **Wake** workflow with **Repair Index** for chats missing from `session_index.jsonl`.
+- Updated project and selection summaries from **Shown/Hidden** to **Available/Repair**.
+- Updated README copy to position Codex Wake as a local chat maintenance tool for deep search, trim, branch, move, trash, restore, backups, and metadata repair.
+
 ## 0.1.5 - 2026-06-12
 
 - Added safe **Move to Trash** support for chats, including selected chats.

@@ -1,10 +1,10 @@
 # Codex Wake
 
-Codex Desktop currently hides chats older than about one week from the sidebar, even when the app setting says not to delete chats. The conversations are usually still on disk, but they become hard to find and continue.
+Codex app 26.609 shows older chats directly in the sidebar, so Codex Wake no longer treats age as a hidden-chat problem. The app is now focused on local chat maintenance: browsing, deep search, project moves, trimming, branching, trash, restore, backups, and metadata repair.
 
 Another common pain: useful chats can end up attached to the wrong project, which makes them hard to find in the right workspace later.
 
-Codex Wake is an unofficial local macOS app for browsing, searching, waking, moving, trashing, restoring, and backing up Codex chats. It reads the local Codex data directory, shows chats grouped by project, supports metadata search and optional deep search through JSONL transcripts, can "wake" old chats so they appear again in the Codex sidebar, can move a chat from one known project to another, can move unwanted chats into its own restoreable app trash, and provides a local backup manager.
+Codex Wake is an unofficial local macOS app for browsing, searching, repairing, moving, trashing, restoring, trimming, branching, and backing up Codex chats. It reads the local Codex data directory, shows chats grouped by project, supports metadata search and optional deep search through JSONL transcripts, can repair chats missing from `session_index.jsonl`, can move a chat from one known project to another, can move unwanted chats into its own restoreable app trash, and provides a local backup manager.
 
 ![Codex Wake screenshot](assets/screenshot.png)
 
@@ -23,12 +23,12 @@ To install it:
 3. Move `Codex Wake.app` to `/Applications`.
 4. Open it.
 
-## Latest In 0.1.5
+## Latest In 0.1.6
 
-- **Move to Trash** for safely removing selected chats from Codex metadata.
-- Codex Wake's own app trash for trashed chats, stored under `~/.codex/.codex-wake-trash/threads/`.
-- Restore and permanent delete actions for trashed chats.
-- Metadata-only cleanup for missing chat files, so deleted projects can disappear after refresh.
+- Updated chat availability for Codex app 26.609, which now shows older chats in the sidebar.
+- Old chats are now marked **Available** instead of **Hidden** when their metadata and JSONL file are present.
+- **Wake** is demoted to **Repair Index** and is only shown for chats missing from `session_index.jsonl`.
+- The main workflow now emphasizes deep search, trim, branch, move, trash, restore, and backup maintenance.
 
 ## Demo Mode
 
@@ -50,15 +50,15 @@ CODEX_WAKE_DEMO=1 "dist/Codex Wake.app/Contents/MacOS/CodexWake"
 - Search by title, first message, preview text, path, or thread id.
 - Run optional deep search inside chat JSONL files.
 - Preview messages from a selected thread without opening Codex.
-- Wake a thread by updating the local metadata Codex uses for recent/sidebar visibility.
-- Wake multiple selected threads.
+- Repair index metadata for chats missing from `session_index.jsonl`.
+- Repair multiple selected chats that need index metadata.
 - Move a thread between known projects by updating its local project metadata.
 - Move a thread to Codex Wake's app trash and remove it from local Codex metadata.
 - Restore a trashed thread from Codex Wake's app trash.
 - Permanently delete trashed threads after confirmation.
 - Trim a thread from a selected user message, with a backup created first.
 - Create a branch thread from a selected turn without changing the original.
-- Create backups before every wake operation.
+- Create backups before every metadata-changing operation.
 - View Codex Wake backup files in the **Backups** section.
 - Restore chat file backups from the **Backups** section.
 - Move backup files to Codex Wake's app trash before permanent cleanup.
@@ -76,9 +76,11 @@ Codex Wake reads local files from:
 
 The app does not send chat content anywhere. There is no server component, telemetry, analytics, or network sync.
 
-## Wake Operation
+## Repair Index
 
-When you wake a selected thread, Codex Wake creates timestamped backups and then updates only the metadata needed to make the thread look recent to Codex Desktop:
+**Repair Index** is a legacy recovery action for chats that exist in the Codex state database and on disk, but are missing from `session_index.jsonl`. This can happen after manual cleanup, format changes, or failed local maintenance.
+
+When you repair a selected thread, Codex Wake creates timestamped backups and then refreshes the metadata Codex uses for listing:
 
 - `threads.thread_source = 'user'`
 - `threads.updated_at` and `threads.updated_at_ms`
@@ -89,11 +91,11 @@ The chat messages themselves are not modified.
 
 Backups are written next to the original files with a timestamp suffix.
 
-## Batch Wake
+## Batch Repair
 
-In multi-select mode, **Wake** runs the same single-chat wake operation for each selected writable chat, one by one. This is intentionally boring and conservative: each chat follows the already-tested wake path and gets its own backups.
+In multi-select mode, **Repair Index** runs the same single-chat repair operation for each selected chat missing from `session_index.jsonl`, one by one. This is intentionally boring and conservative: each chat follows the already-tested repair path and gets its own backups.
 
-Archived chats and chats with missing JSONL files are skipped.
+Already available chats, archived chats, and chats with missing JSONL files are skipped.
 
 ## Move Operation
 
@@ -161,9 +163,9 @@ dist/Codex Wake.app
 
 ## Safety Notes
 
-Codex Wake edits local Codex metadata when you press **Wake**, **Wake selected**, **Move**, **Move to Trash**, **Trim from here**, **Branch from here**, or **Restore Chat**. Keep Codex Desktop closed while changing old threads if you want to avoid concurrent writes.
+Codex Wake edits local Codex metadata when you press **Repair Index**, **Move**, **Move to Trash**, **Trim from here**, **Branch from here**, or **Restore Chat**. Keep Codex Desktop closed while changing chats if you want to avoid concurrent writes.
 
-If something looks wrong after a wake or move operation, restore the backup files from the **Backups** section. If you moved a chat to Trash by mistake, restore it from the **Trash** section. Do not empty app trash until you are sure you no longer need those files.
+If something looks wrong after a repair or move operation, restore the backup files from the **Backups** section. If you moved a chat to Trash by mistake, restore it from the **Trash** section. Do not empty app trash until you are sure you no longer need those files.
 
 ## Status
 
